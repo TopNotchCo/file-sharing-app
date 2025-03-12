@@ -50,5 +50,5 @@ A modern file sharing application built with cutting-edge web technologies.
 
 - `npm run dev` - Start the development server
 - `npm run build` - Build for production
-- `npm start` - Run the production build
-- `npm lint` - Run linting
+- `npm run start` - Run the production build
+- `npm run lint` - Run linting
