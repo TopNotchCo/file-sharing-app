@@ -4,11 +4,6 @@ A modern file sharing application built with cutting-edge web technologies.
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- macOS (Intel or Apple Silicon)
-- Terminal access
-
 ### Setup Instructions
 
 1. **Install Homebrew**
@@ -56,38 +51,4 @@ A modern file sharing application built with cutting-edge web technologies.
 - `npm run dev` - Start the development server
 - `npm run build` - Build for production
 - `npm start` - Run the production build
-- `npm test` - Run tests
-
-## 🛠️ Tech Stack
-
-- Next.js
-- React
-- TypeScript
-- Tailwind CSS
-
-## 📁 Project Structure
-
-```
-file-sharing-app/
-├── public/         # Static assets
-├── src/            # Source code
-│   ├── components/ # React components
-│   ├── pages/      # Application pages
-│   ├── styles/     # CSS styles
-│   └── utils/      # Utility functions
-├── .env.example    # Example environment variables
-└── README.md       # This file
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
+- `npm lint` - Run linting
