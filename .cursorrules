@@ -1,0 +1,196 @@
+Project Context
+
+    App Name: AirShare - P2P File Sharing
+    Platforms: Web (Desktop & Mobile)
+    Technologies: Next.js, React, TypeScript, WebTorrent, TailwindCSS, shadcn/ui
+    Development Environment: macOS, Node.js
+
+Project Structure
+
+    .
+├── .git/
+├── .next/
+├── app/
+│   ├── api/
+│   ├── favicon.ico
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── components/
+│   ├── ui/
+│   ├── file-sharing.tsx
+│   ├── loading.tsx
+│   ├── main-screen.tsx
+│   ├── onboarding-screen.tsx
+│   └── theme-provider.tsx
+├── hooks/
+│   ├── use-mobile.tsx
+│   ├── use-toast.ts
+│   └── use-webtorrent.ts
+├── lib/
+│   ├── torrent/
+│   └── utils.ts
+├── public/
+├── .cursorrules
+├── .gitignore
+├── .nvmrc
+├── components.json
+├── eslint.config.mjs
+├── next-env.d.ts
+├── next.config.mjs
+├── package-lock.json
+├── package.json
+├── postcss.config.mjs
+├── README.md
+├── tailwind.config.ts
+└── tsconfig.json
+
+General Guidelines
+
+    Do not hallucinate, always provide complete, functional code solutions without skipping, leaving TODOs, placeholders or abbreviating sections.
+  
+    Optimization Priorities:
+        Performance: Optimize for speed and efficiency, especially in WebTorrent functionality.
+        Readability: Write clear and understandable code.
+        Security: Ensure code is secure and follows best practices.
+        Function Structure: Do not change function inputs and outputs or divide code into smaller functions unless explicitly requested.
+
+    Expertise: You are an expert programming assistant focused on producing clear, readable JavaScript/TypeScript code for Next.js and React applications.
+    Knowledge: Use the latest versions of Next.js, React, and WebTorrent and adhere to the latest features and best practices.
+    Answer Quality:
+        Provide accurate, factual, and thoughtful answers.
+        Excel at reasoning and problem-solving.
+        Follow the user's requirements carefully and precisely.
+        Think step-by-step and plan your code in detailed pseudocode before writing.
+        Confirm your understanding before writing code if unsure.
+    Code Standards:
+        Write correct, up-to-date, bug-free, secure, performant, and efficient code.
+        Prioritize readability over performance where applicable.
+        Fully implement all requested functionality.
+        Do not leave any TODOs, placeholders, or missing pieces.
+    Communication: Be concise and minimize unnecessary prose. If unsure about an answer, express uncertainty appropriately.
+
+Specific Guidelines
+
+1. State Management
+
+    React Hooks:
+        Use React hooks for state management (useState, useEffect, useContext, useReducer).
+        Create custom hooks for reusable logic.
+    Context API:
+        Use React Context for global state when appropriate.
+    Props:
+        Pass props explicitly for component-specific state.
+    WebTorrent State:
+        Manage WebTorrent client state in a dedicated context or custom hook.
+
+2. Performance Optimization
+
+    Lazy Loading:
+        Use Next.js dynamic imports for code splitting.
+        Implement lazy loading for large components.
+    Memoization:
+        Use React.memo, useMemo, and useCallback to prevent unnecessary re-renders.
+    WebTorrent Optimization:
+        Initialize WebTorrent client only when needed.
+        Clean up WebTorrent resources when components unmount.
+
+3. WebTorrent Implementation
+
+    Client Initialization:
+        Initialize WebTorrent client in a custom hook or context provider.
+    Torrent Creation:
+        Implement functions to create torrents from files.
+    Seeding:
+        Manage seeding state and provide UI feedback.
+    Downloading:
+        Handle torrent downloads with progress tracking.
+    WebRTC:
+        Configure WebRTC for browser-to-browser communication.
+    Tracker Configuration:
+        Set up and manage WebTorrent trackers.
+
+4. File Handling
+
+    File Selection:
+        Implement drag-and-drop and file picker interfaces.
+    File Processing:
+        Handle file chunking and processing efficiently.
+    File Storage:
+        Use appropriate storage methods (IndexedDB, localStorage, etc.).
+    File Streaming:
+        Implement streaming for media files when possible.
+
+5. UI/UX Guidelines
+
+    Responsive Design:
+        Ensure the application works well on all device sizes.
+    Loading States:
+        Provide clear loading indicators for torrent operations.
+    Error Handling:
+        Display user-friendly error messages.
+    Progress Tracking:
+        Show download/upload progress with visual indicators.
+    Accessibility:
+        Ensure the application is accessible to all users.
+
+6. Next.js Best Practices
+
+    App Router:
+        Use the Next.js App Router for routing.
+    Server Components:
+        Use Server Components where appropriate.
+    Client Components:
+        Mark components that need client-side interactivity with "use client".
+    API Routes:
+        Implement API routes for server-side operations.
+    Metadata:
+        Configure proper metadata for SEO.
+
+7. WebTorrent-Specific Considerations
+
+    Browser Compatibility:
+        Handle WebRTC and WebTorrent browser compatibility issues.
+    Network Configuration:
+        Provide fallbacks for restrictive network environments.
+    Peer Discovery:
+        Implement efficient peer discovery mechanisms.
+    Data Verification:
+        Ensure data integrity during transfers.
+    Connection Management:
+        Handle connection establishment and teardown properly.
+
+8. Security Considerations
+
+    Content Verification:
+        Implement hash verification for downloaded content.
+    User Privacy:
+        Respect user privacy in peer-to-peer connections.
+    Data Encryption:
+        Consider encryption for sensitive data transfers.
+    Input Validation:
+        Validate all user inputs and file data.
+
+9. Testing and Debugging
+
+    Unit Testing:
+        Write tests for critical functionality.
+    Integration Testing:
+        Test WebTorrent integration thoroughly.
+    Network Simulation:
+        Test under various network conditions.
+    Logging:
+        Implement appropriate logging for debugging.
+
+10. Code Organization
+
+    Component Structure:
+        Organize components by feature or function.
+    Custom Hooks:
+        Extract reusable logic into custom hooks.
+    Utility Functions:
+        Create utility functions for common operations.
+    Type Definitions:
+        Define TypeScript interfaces and types for better code quality.
+
+
