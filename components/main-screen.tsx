@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { Upload, Clipboard, Download, X, FileText, File as FileIcon, Clock } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -19,6 +19,17 @@ interface MainScreenProps {
   sharedFiles: Array<{ id: number; name: string; size: string; owner: string }>
 }
 
+interface ShareState {
+  mode: "file" | "text" | null
+  isDragging: boolean
+}
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return bytes + " B"
+  else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB"
+  return (bytes / 1048576).toFixed(1) + " MB"
+}
+
 export default function MainScreen({
   userName,
   onFileShare,
@@ -29,98 +40,143 @@ export default function MainScreen({
 }: MainScreenProps) {
   const [clipboardText, setClipboardText] = useState<string>("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [isDragging, setIsDragging] = useState<boolean>(false)
-  const [shareMode, setShareMode] = useState<"file" | "text" | null>(null)
+  const [shareState, setShareState] = useState<ShareState>({ mode: null, isDragging: false })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Auto-detect clipboard content when focused
-  useEffect(() => {
-    const handlePaste = async () => {
-      try {
-        const clipboardItems = await navigator.clipboard.read();
-        for (const item of clipboardItems) {
-          // Check if clipboard has text
-          if (item.types.includes('text/plain')) {
-            const blob = await item.getType('text/plain');
-            const text = await blob.text();
-            if (text && !clipboardText) {
-              setClipboardText(text);
-              setShareMode("text");
-            }
+  const handleClipboardDetection = useCallback(async () => {
+    try {
+      const clipboardItems = await navigator.clipboard.read()
+      for (const item of clipboardItems) {
+        if (item.types.includes('text/plain')) {
+          const blob = await item.getType('text/plain')
+          const text = await blob.text()
+          if (text && !clipboardText) {
+            setClipboardText(text)
+            setShareState(prev => ({ ...prev, mode: "text" }))
           }
         }
-      } catch {
-        // Clipboard API not available or permission denied
-        console.log("Clipboard detection not available");
       }
-    };
+    } catch {
+      console.log("Clipboard detection not available")
+    }
+  }, [clipboardText])
 
-    // Try to detect clipboard content when textarea is focused
-    const textarea = textareaRef.current;
+  useEffect(() => {
+    const textarea = textareaRef.current
     if (textarea) {
-      textarea.addEventListener('focus', handlePaste);
-      return () => textarea.removeEventListener('focus', handlePaste);
+      textarea.addEventListener('focus', handleClipboardDetection)
+      return () => textarea.removeEventListener('focus', handleClipboardDetection)
     }
-  }, [clipboardText]);
+  }, [handleClipboardDetection])
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
       setSelectedFile(e.target.files[0])
-      setShareMode("file")
+      setShareState(prev => ({ ...prev, mode: "file" }))
     }
-  }
+  }, [])
 
-  const handleFileUpload = () => {
+  const handleFileUpload = useCallback(() => {
     if (selectedFile) {
       onFileShare(selectedFile)
       setSelectedFile(null)
-      setShareMode(null)
+      setShareState({ mode: null, isDragging: false })
     }
-  }
+  }, [selectedFile, onFileShare])
 
-  const handleShareClipboard = () => {
+  const handleShareClipboard = useCallback(() => {
     if (clipboardText.trim()) {
       onTextShare(clipboardText)
       setClipboardText("")
-      setShareMode(null)
+      setShareState({ mode: null, isDragging: false })
     }
-  }
+  }, [clipboardText, onTextShare])
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragEvents = useCallback((isDragging: boolean) => (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-  }, [])
-
-  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(true)
-    setShareMode("file")
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(false)
+    setShareState(prev => ({ ...prev, isDragging }))
+    if (isDragging) setShareState(prev => ({ ...prev, mode: "file" }))
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragging(false)
+    setShareState(prev => ({ ...prev, isDragging: false }))
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    if (e.dataTransfer.files?.[0]) {
       setSelectedFile(e.dataTransfer.files[0])
-      setShareMode("file")
+      setShareState(prev => ({ ...prev, mode: "file" }))
     }
   }, [])
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return bytes + " B"
-    else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB"
-    else return (bytes / 1048576).toFixed(1) + " MB"
-  }
+  const resetShareState = useCallback(() => {
+    setShareState({ mode: null, isDragging: false })
+    setSelectedFile(null)
+    setClipboardText("")
+  }, [])
+
+  const FilesList = useMemo(() => (
+    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+      {sharedFiles.map((file) => (
+        <div
+          key={file.id}
+          className="flex items-center justify-between p-3 rounded-lg border border-[#9D4EDD]/30 bg-secondary/30 hover:bg-secondary/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-[#9D4EDD]/10 p-2 rounded-full">
+              <FileIcon className="h-5 w-5 text-[#9D4EDD]" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-medium">{file.name}</span>
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <span>{file.size}</span>
+                <span>•</span>
+                <span>From: {file.owner}</span>
+              </div>
+            </div>
+          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onFileDownload(file.id)}
+                  className="hover:bg-[#9D4EDD]/20"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Download file</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      ))}
+    </div>
+  ), [sharedFiles, onFileDownload])
+
+  const ConnectedUsersList = useMemo(() => (
+    <div className="divide-y divide-[#9D4EDD]/20">
+      {connectedUsers.map((user) => (
+        <div key={user.id} className="flex items-center justify-between px-4 py-3 hover:bg-[#9D4EDD]/5 transition-colors">
+          <div className="flex items-center gap-3">
+            <Avatar className="h-8 w-8 border border-[#9D4EDD]/50 bg-[#7B2CBF]">
+              <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+            </Avatar>
+            <div>
+              <p className="font-medium">{user.name}</p>
+              <p className="text-xs text-muted-foreground">Active now</p>
+            </div>
+          </div>
+          <div className="h-2 w-2 rounded-full bg-green-500" />
+        </div>
+      ))}
+    </div>
+  ), [connectedUsers])
 
   return (
     <div className="flex flex-col gap-6">
@@ -139,19 +195,17 @@ export default function MainScreen({
               
               <div 
                 className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors min-h-[200px] flex flex-col items-center justify-center ${
-                  isDragging
+                  shareState.isDragging
                     ? "border-[#9D4EDD] bg-[#9D4EDD]/10"
                     : "border-[#9D4EDD]/30 hover:border-[#9D4EDD]/60"
                 }`}
-                onDragOver={handleDragOver}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
+                onDragOver={handleDragEvents(shareState.isDragging)}
                 onDrop={handleDrop}
               >
                 <input id="file" type="file" onChange={handleFileChange} className="hidden" ref={fileInputRef} />
                 
                 {/* Share mode selector - only shown when nothing is being shared */}
-                {!shareMode && (
+                {!shareState.mode && (
                   <div className="space-y-6">
                     <div className="flex items-center justify-center">
                       <div className="bg-[#9D4EDD]/20 p-4 rounded-full">
@@ -165,8 +219,8 @@ export default function MainScreen({
                     <div className="flex gap-3 justify-center">
                       <Button
                         onClick={() => {
-                          setShareMode("file");
-                          fileInputRef.current?.click();
+                          setShareState(prev => ({ ...prev, mode: "file" }))
+                          fileInputRef.current?.click()
                         }}
                         variant="outline"
                         className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
@@ -176,8 +230,8 @@ export default function MainScreen({
                       </Button>
                       <Button
                         onClick={() => {
-                          setShareMode("text");
-                          setTimeout(() => textareaRef.current?.focus(), 100);
+                          setShareState(prev => ({ ...prev, mode: "text" }))
+                          setTimeout(() => textareaRef.current?.focus(), 100)
                         }}
                         variant="outline"
                         className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
@@ -190,7 +244,7 @@ export default function MainScreen({
                 )}
 
                 {/* File sharing UI */}
-                {shareMode === "file" && selectedFile && (
+                {shareState.mode === "file" && selectedFile && (
                   <div className="space-y-4 w-full max-w-md">
                     <div className="flex items-center justify-center">
                       <div className="bg-[#9D4EDD]/20 p-3 rounded-full">
@@ -203,10 +257,7 @@ export default function MainScreen({
                     </div>
                     <div className="flex gap-2 justify-center">
                       <Button
-                        onClick={() => {
-                          setSelectedFile(null);
-                          setShareMode(null);
-                        }}
+                        onClick={resetShareState}
                         variant="outline"
                         className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
                       >
@@ -225,7 +276,7 @@ export default function MainScreen({
                 )}
 
                 {/* Text sharing UI */}
-                {shareMode === "text" && (
+                {shareState.mode === "text" && (
                   <div className="space-y-4 w-full max-w-md">
                     <div className="flex items-center justify-center">
                       <div className="bg-[#9D4EDD]/20 p-3 rounded-full">
@@ -242,10 +293,7 @@ export default function MainScreen({
                     />
                     <div className="flex gap-2 justify-center">
                       <Button
-                        onClick={() => {
-                          setClipboardText("");
-                          setShareMode(null);
-                        }}
+                        onClick={resetShareState}
                         variant="outline"
                         className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
                       >
@@ -265,13 +313,9 @@ export default function MainScreen({
                 )}
 
                 {/* Close button for any share mode */}
-                {shareMode && (
+                {shareState.mode && (
                   <Button
-                    onClick={() => {
-                      setShareMode(null);
-                      setSelectedFile(null);
-                      setClipboardText("");
-                    }}
+                    onClick={resetShareState}
                     size="icon"
                     variant="ghost"
                     className="absolute top-2 right-2 h-8 w-8 rounded-full hover:bg-[#9D4EDD]/10"
@@ -291,47 +335,7 @@ export default function MainScreen({
                 </Badge>
               </div>
               
-              {sharedFiles.length > 0 ? (
-                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                  {sharedFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      className="flex items-center justify-between p-3 rounded-lg border border-[#9D4EDD]/30 bg-secondary/30 hover:bg-secondary/50 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-[#9D4EDD]/10 p-2 rounded-full">
-                          <FileIcon className="h-5 w-5 text-[#9D4EDD]" />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{file.name}</span>
-                          <div className="flex items-center gap-2 text-xs text-gray-400">
-                            <span>{file.size}</span>
-                            <span>•</span>
-                            <span>From: {file.owner}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => onFileDownload(file.id)}
-                              className="hover:bg-[#9D4EDD]/20"
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Download file</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  ))}
-                </div>
-              ) : (
+              {sharedFiles.length > 0 ? FilesList : (
                 <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-[#9D4EDD]/20 rounded-lg bg-secondary/10">
                   <Clock className="h-10 w-10 text-[#9D4EDD]/40 mb-3" />
                   <p className="text-center text-gray-500">No files have been shared yet</p>
@@ -380,22 +384,7 @@ export default function MainScreen({
             <div className="px-4 py-3 border-b border-[#9D4EDD]/20">
               <h3 className="text-sm font-medium text-muted-foreground">Connected Users</h3>
             </div>
-            <div className="divide-y divide-[#9D4EDD]/20">
-              {connectedUsers.map((user) => (
-                <div key={user.id} className="flex items-center justify-between px-4 py-3 hover:bg-[#9D4EDD]/5 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8 border border-[#9D4EDD]/50 bg-[#7B2CBF]">
-                      <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-medium">{user.name}</p>
-                      <p className="text-xs text-muted-foreground">Active now</p>
-                    </div>
-                  </div>
-                  <div className="h-2 w-2 rounded-full bg-green-500" />
-                </div>
-              ))}
-            </div>
+            {ConnectedUsersList}
           </div>
         </CardContent>
       </Card>

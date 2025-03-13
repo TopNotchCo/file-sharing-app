@@ -6,7 +6,6 @@ export default function Home() {
   return (
     <main>
       <div >
-    
         <Suspense fallback={<Loading />}>
           <FileSharing />
         </Suspense>
