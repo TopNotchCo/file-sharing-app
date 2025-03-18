@@ -91,6 +91,7 @@ export default function OnboardingScreen({ userName, onUserNameChange, onComplet
   const [activeTestimonial, setActiveTestimonial] = useState(0)
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null)
   const [isNameValid, setIsNameValid] = useState(false)
+  const [localUserName, setLocalUserName] = useState(userName)
 
   useEffect(() => {
     // Rotate testimonials every 5 seconds
@@ -101,11 +102,21 @@ export default function OnboardingScreen({ userName, onUserNameChange, onComplet
   }, [])
 
   useEffect(() => {
-    setIsNameValid(userName.trim().length > 0)
-  }, [userName])
+    setIsNameValid(localUserName.trim().length > 0)
+  }, [localUserName])
+
+  const handleUserNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value
+    setLocalUserName(newValue)
+    // Only update parent state when the input is valid
+    if (newValue.trim().length > 0) {
+      onUserNameChange(newValue)
+    }
+  }
 
   const handleSetUserName = () => {
-    if (userName.trim()) {
+    if (localUserName.trim()) {
+      onUserNameChange(localUserName.trim())
       onComplete()
     }
   }
@@ -156,8 +167,8 @@ export default function OnboardingScreen({ userName, onUserNameChange, onComplet
                       <Input
                         id="name"
                         placeholder="Enter a username"
-                        value={userName}
-                        onChange={(e) => onUserNameChange(e.target.value)}
+                        value={localUserName}
+                        onChange={handleUserNameChange}
                         onKeyDown={handleKeyDown}
                         className="bg-secondary/50 border-[#9D4EDD]/30 pl-4 pr-10 py-6 text-lg rounded-xl focus:ring-2 focus:ring-[#9D4EDD]/50 transition-all"
                         autoFocus

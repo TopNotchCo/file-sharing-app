@@ -14,9 +14,9 @@ interface MainScreenProps {
   userName: string
   onFileShare: (file: File) => void
   onTextShare: (text: string) => void
-  onFileDownload: (fileId: number) => void
-  connectedUsers: Array<{ id: number; name: string }>
-  sharedFiles: Array<{ id: number; name: string; size: string; owner: string }>
+  onFileDownload: (fileId: string) => void
+  connectedUsers: Array<{ id: string; name: string; lastSeen: number }>
+  sharedFiles: Array<{ id: string; name: string; size: string; owner: string }>
 }
 
 export default function MainScreen({
@@ -120,6 +120,11 @@ export default function MainScreen({
     if (bytes < 1024) return bytes + " B"
     else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB"
     else return (bytes / 1048576).toFixed(1) + " MB"
+  }
+
+  // Function to check if a user is currently active (within last 10 seconds)
+  const isUserActive = (lastSeen: number) => {
+    return Date.now() - lastSeen < 10000
   }
 
   return (
@@ -389,12 +394,23 @@ export default function MainScreen({
                     </Avatar>
                     <div>
                       <p className="font-medium">{user.name}</p>
-                      <p className="text-xs text-muted-foreground">Active now</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isUserActive(user.lastSeen) ? 'Active now' : 'Recently active'}
+                      </p>
                     </div>
                   </div>
-                  <div className="h-2 w-2 rounded-full bg-green-500" />
+                  <div className={`h-2 w-2 rounded-full ${
+                    isUserActive(user.lastSeen) ? 'bg-green-500' : 'bg-yellow-500'
+                  }`} />
                 </div>
               ))}
+              {connectedUsers.length === 0 && (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  <Clock className="h-8 w-8 mx-auto mb-2 text-[#9D4EDD]/40" />
+                  <p>No other users connected</p>
+                  <p className="text-xs mt-1">Share this app with others on your network</p>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
