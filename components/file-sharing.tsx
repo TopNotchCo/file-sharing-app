@@ -1,12 +1,6 @@
 "use client"
 
-// Polyfill for browser environment
-if (typeof globalThis !== 'undefined') {
-  // Add global and process for WebTorrent
-  (globalThis as any).global = globalThis;
-  (globalThis as any).process = (globalThis as any).process || { env: {} };
-}
-
+// First all imports must come before any other code
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Button } from '@/components/ui/button'
@@ -18,18 +12,35 @@ import { Progress } from '@/components/ui/progress'
 import { formatBytes, hasWebCryptoSupport } from '@/lib/utils'
 import { storage } from '@/lib/storage'
 import dynamic from 'next/dynamic'
-import { Share2, Shield, Zap, Users, Wifi, WifiOff, AlertTriangle } from "lucide-react"
+import { Share2, Shield, Zap, Users, Wifi, AlertTriangle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+
+// Then polyfill code after imports
+// Polyfill for browser environment
+if (typeof globalThis !== 'undefined') {
+  // Add global and process for WebTorrent
+  (globalThis as { global?: typeof globalThis }).global = globalThis;
+  (globalThis as { process?: { env: Record<string, string> } }).process = 
+    (globalThis as { process?: { env: Record<string, string> } }).process || { env: {} };
+}
 
 // Moved to shared constants
 const MAGNET_STORAGE_KEY = 'airshare-magnet-links'
 
-// Simplified connection status display
-const CONNECTION_STATUS = {
-  connecting: { icon: 'animate-pulse text-amber-500', text: 'Connecting...' },
-  connected: { icon: 'text-green-500', text: 'Connected' },
-  failed: { icon: 'text-red-500', text: 'Connection failed' },
-  default: { icon: 'text-muted-foreground', text: 'Ready' }
+// Define connection status type
+type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'failed';
+
+// Simplified connection status display with proper typing
+const CONNECTION_STATUS: Record<ConnectionStatus | 'default', { 
+  icon: string; 
+  text: string;
+  color: string;
+}> = {
+  connecting: { icon: 'animate-pulse text-amber-500', text: 'Connecting...', color: 'text-amber-500' },
+  connected: { icon: 'text-green-500', text: 'Connected', color: 'text-green-500' },
+  failed: { icon: 'text-red-500', text: 'Connection failed', color: 'text-red-500' },
+  idle: { icon: 'text-muted-foreground', text: 'Ready', color: 'text-muted-foreground' },
+  default: { icon: 'text-muted-foreground', text: 'Ready', color: 'text-muted-foreground' }
 }
 
 // Testimonials data
@@ -114,6 +125,57 @@ const FAQ_ITEMS = [
   }
 ]
 
+// Add a reliable copy function
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    // Try to use the modern Clipboard API first
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    
+    // Fallback to older execCommand method
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    
+    // Avoid scrolling to bottom
+    textArea.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 2em;
+      height: 2em;
+      padding: 0;
+      border: none;
+      outline: none;
+      boxShadow: none;
+      background: transparent;
+    `;
+
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    try {
+      document.execCommand('copy');
+      textArea.remove();
+      return true;
+    } catch (err) {
+      console.error('Error using execCommand:', err);
+      textArea.remove();
+      return false;
+    }
+  } catch (err) {
+    console.error('Error copying to clipboard:', err);
+    return false;
+  }
+}
+
+// Helper function to get connection status display
+function getConnectionStatus(status: ConnectionStatus) {
+  return CONNECTION_STATUS[status] || CONNECTION_STATUS.default;
+}
+
 const ClientFileSharing = () => {
   // Consolidated state hooks
   const [state, setState] = useState({
@@ -133,7 +195,7 @@ const ClientFileSharing = () => {
   }
 
   const { files, shareFiles, downloadFiles, connectionStatus, peerConnectionIssue } = useWebTorrent()
-  const { toast } = useToast()
+  const { toast: componentToast } = useToast()
 
   // Unified useEffect for initial setup
   useEffect(() => {
@@ -158,27 +220,59 @@ const ClientFileSharing = () => {
     return () => clearInterval(interval)
   }, [])
 
+  // Check for Web Crypto API support on component mount
+  useEffect(() => {
+    const cryptoSupported = hasWebCryptoSupport();
+    setState(s => ({...s, hasCryptoSupport: cryptoSupported}));
+    
+    if (!cryptoSupported) {
+      console.warn('Web Crypto API not fully supported in this browser');
+      componentToast({
+        title: "Limited Browser Support",
+        description: "Your browser has limited support for secure file operations. Please use Chrome, Firefox, or Edge for full functionality.",
+        variant: "destructive",
+        duration: 10000 // Show for 10 seconds
+      });
+    }
+  }, [componentToast]);
+
   // Consolidated file handling logic
   const handleFiles = {
     onDrop: async (files: File[]) => {
-      if (!files.length) return
+      if (!files.length) return;
+      
+      // Check crypto support before proceeding
+      if (!state.hasCryptoSupport) {
+        componentToast({
+          title: "Browser Not Supported",
+          description: "Your current browser doesn't support secure file operations. Please use Chrome, Firefox, or Edge.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
       try {
-        await shareFiles(files)
-        toast({ title: 'Files ready', description: 'Share magnet link to start transfer' })
-      } catch (err) {
-        toast({ title: 'Error', variant: 'destructive', description: 'Failed to share files' })
+        await shareFiles(files);
+        componentToast({ title: 'Files ready', description: 'Share magnet link to start transfer' });
+      } catch (error) {
+        console.error('Error sharing files:', error);
+        componentToast({ 
+          title: 'Error', 
+          variant: 'destructive', 
+          description: 'Failed to share files. Please try again or use a different browser.' 
+        });
       }
     },
     
     download: async () => {
       if (!state.magnetURI?.startsWith('magnet:?')) {
-        return toast({ title: 'Invalid magnet', variant: 'destructive' })
+        return componentToast({ title: 'Invalid magnet', variant: 'destructive' })
       }
       try {
         await downloadFiles(state.magnetURI.trim())
         setState(s => ({...s, magnetURI: ''}))
       } catch {
-        toast({ title: 'Download failed', variant: 'destructive' })
+        componentToast({ title: 'Download failed', variant: 'destructive' })
       }
     }
   }
@@ -190,16 +284,6 @@ const ClientFileSharing = () => {
     noKeyboard: false
   })
 
-  // Check for Web Crypto API support on component mount
-  useEffect(() => {
-    const cryptoSupported = hasWebCryptoSupport();
-    setState(s => ({...s, hasCryptoSupport: cryptoSupported}));
-    
-    if (!cryptoSupported) {
-      console.warn('Web Crypto API not fully supported in this browser');
-    }
-  }, []);
-  
   // Monitor for magnet URI changes or disappearances - with throttling
   useEffect(() => {
     // Only log every 2 seconds at most
@@ -342,30 +426,26 @@ const ClientFileSharing = () => {
                 />
                 {magnet && (
                   <Button 
-                    onClick={() => {
+                    onClick={async () => {
+                      if (!magnet) return;
+                      
                       try {
-                        // Try to use modern clipboard API first
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                          navigator.clipboard.writeText(magnet)
-                            .then(() => {
-                              toast({
-                                title: 'Copied!',
-                                description: 'Magnet link copied to clipboard',
-                              })
-                            })
-                            .catch(err => {
-                              console.error('Clipboard API failed:', err);
-                              // Fallback to legacy method
-                              fallbackCopyTextToClipboard(magnet);
-                            });
+                        const success = await copyToClipboard(magnet);
+                        if (success) {
+                          componentToast({
+                            title: 'Copied!',
+                            description: 'Magnet link copied to clipboard',
+                          });
                         } else {
-                          // Fallback for browsers without clipboard API
-                          fallbackCopyTextToClipboard(magnet);
+                          componentToast({
+                            title: 'Copy failed',
+                            description: 'Could not copy to clipboard. Try selecting and copying manually.',
+                            variant: 'destructive',
+                          });
                         }
-                        console.log('Attempted to copy magnet:', magnet.substring(0, 30) + '...')
                       } catch (err) {
-                        console.error('Error copying to clipboard:', err);
-                        toast({
+                        console.error('Error in copy handler:', err);
+                        componentToast({
                           title: 'Copy failed',
                           description: 'Could not copy to clipboard. Try selecting and copying manually.',
                           variant: 'destructive',
@@ -383,39 +463,10 @@ const ClientFileSharing = () => {
         </div>
       )
     })
-  }, [files, getMagnetLink, toast])
+  }, [files, getMagnetLink, componentToast])
 
-  // Helper function to get connection status display
-  const getConnectionStatusDisplay = () => {
-    switch (connectionStatus) {
-      case 'connecting':
-        return {
-          icon: <Wifi className="h-4 w-4 animate-pulse text-amber-500" />,
-          text: 'Connecting to network...',
-          color: 'text-amber-500'
-        }
-      case 'connected':
-        return {
-          icon: <Wifi className="h-4 w-4 text-green-500" />,
-          text: 'Connected',
-          color: 'text-green-500'
-        }
-      case 'failed':
-        return {
-          icon: <WifiOff className="h-4 w-4 text-red-500" />,
-          text: 'Connection failed',
-          color: 'text-red-500'
-        }
-      default:
-        return {
-          icon: <Wifi className="h-4 w-4 text-muted-foreground" />,
-          text: 'Ready',
-          color: 'text-muted-foreground'
-        }
-    }
-  }
-
-  const connectionDisplay = getConnectionStatusDisplay()
+  // Remove unused connectionDisplay variable
+  const currentStatus = getConnectionStatus(connectionStatus as ConnectionStatus);
 
   // Check if we should show the WebRTC optimization banner (show for 7 days after implementation)
   const shouldShowOptimizationBanner = () => {
@@ -434,9 +485,9 @@ const ClientFileSharing = () => {
           connectionStatus === 'failed' ? 'border-red-200' : 'border-amber-200'
         }`}>
           <div className="flex items-center space-x-2">
-            <Wifi className={`h-4 w-4 ${CONNECTION_STATUS[connectionStatus]?.icon || CONNECTION_STATUS.default.icon}`} />
-            <span className={CONNECTION_STATUS[connectionStatus]?.color || CONNECTION_STATUS.default.color}>
-              {CONNECTION_STATUS[connectionStatus]?.text || CONNECTION_STATUS.default.text}
+            <Wifi className={`h-4 w-4 ${currentStatus.icon}`} />
+            <span className={currentStatus.color}>
+              {currentStatus.text}
             </span>
           </div>
         </div>

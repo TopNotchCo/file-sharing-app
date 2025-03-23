@@ -26,7 +26,8 @@ export function hasWebCryptoSupport(): boolean {
   if (typeof window === 'undefined') return false
   
   try {
-    const crypto = window.crypto || (window as any).msCrypto;
+    // Use type assertion for legacy browser support
+    const crypto: Crypto = window.crypto || (window as { msCrypto?: Crypto }).msCrypto;
     
     // Check for basic crypto support
     if (!crypto) return false;
@@ -35,11 +36,14 @@ export function hasWebCryptoSupport(): boolean {
     if (typeof crypto.getRandomValues !== 'function') return false;
 
     // Check for subtle crypto support (including prefixed versions)
-    const subtle = crypto.subtle || (crypto as any).webkitSubtle || (window as any).crypto.webkitSubtle;
+    const subtle: SubtleCrypto = crypto.subtle || 
+      ((crypto as unknown as { webkitSubtle?: SubtleCrypto }).webkitSubtle) || 
+      ((window as unknown as { crypto: { webkitSubtle?: SubtleCrypto } }).crypto.webkitSubtle);
+    
     if (!subtle) return false;
 
     // Check for specific required methods
-    const requiredMethods = [
+    const requiredMethods: Array<keyof SubtleCrypto> = [
       'digest',
       'importKey',
       'sign',
@@ -53,18 +57,25 @@ export function hasWebCryptoSupport(): boolean {
   }
 }
 
+interface PolyfillCrypto {
+  getRandomValues(buffer: Uint8Array): Uint8Array;
+  subtle: {
+    digest(algorithm: AlgorithmIdentifier, data: ArrayBuffer): Promise<ArrayBuffer>;
+  };
+}
+
 /**
  * Polyfill for browsers without full Web Crypto API support
  * This is used as a fallback for basic crypto operations
  */
-export function getPolyfillCrypto() {
+export function getPolyfillCrypto(): PolyfillCrypto {
   // Use native crypto if available
   if (hasWebCryptoSupport()) {
-    return window.crypto;
+    return window.crypto as unknown as PolyfillCrypto;
   }
 
   // Basic polyfill for getRandomValues
-  const polyfilledCrypto = {
+  const polyfilledCrypto: PolyfillCrypto = {
     getRandomValues: function(buffer: Uint8Array): Uint8Array {
       for (let i = 0; i < buffer.length; i++) {
         buffer[i] = Math.floor(Math.random() * 256);
@@ -73,7 +84,7 @@ export function getPolyfillCrypto() {
     },
     // Minimal subtle crypto polyfill
     subtle: {
-      digest: async (algorithm: string, data: ArrayBuffer) => {
+      digest: async (_algorithm: AlgorithmIdentifier, _data: ArrayBuffer): Promise<ArrayBuffer> => {
         throw new Error('Subtle crypto not supported in this browser');
       }
     }
