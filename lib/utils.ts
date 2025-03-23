@@ -26,21 +26,64 @@ export function hasWebCryptoSupport(): boolean {
   if (typeof window === 'undefined') return false
   
   try {
+    const crypto = window.crypto || (window as any).msCrypto;
+    
     // Check for basic crypto support
-    const hasCrypto = typeof window.crypto !== 'undefined';
-    
-    // Check for subtle crypto support
-    const hasSubtleCrypto = typeof window.crypto?.subtle !== 'undefined';
-    
+    if (!crypto) return false;
+
+    // Check for getRandomValues support
+    if (typeof crypto.getRandomValues !== 'function') return false;
+
+    // Check for subtle crypto support (including prefixed versions)
+    const subtle = crypto.subtle || (crypto as any).webkitSubtle || (window as any).crypto.webkitSubtle;
+    if (!subtle) return false;
+
     // Check for specific required methods
-    const hasRequiredMethods = typeof window.crypto?.getRandomValues !== 'undefined';
-    
-    return hasCrypto && hasSubtleCrypto && hasRequiredMethods;
+    const requiredMethods = [
+      'digest',
+      'importKey',
+      'sign',
+      'verify'
+    ];
+
+    return requiredMethods.every(method => typeof subtle[method] === 'function');
   } catch (err) {
     console.error('Error checking for Web Crypto support:', err)
     return false
   }
 }
+
+/**
+ * Polyfill for browsers without full Web Crypto API support
+ * This is used as a fallback for basic crypto operations
+ */
+export function getPolyfillCrypto() {
+  // Use native crypto if available
+  if (hasWebCryptoSupport()) {
+    return window.crypto;
+  }
+
+  // Basic polyfill for getRandomValues
+  const polyfilledCrypto = {
+    getRandomValues: function(buffer: Uint8Array): Uint8Array {
+      for (let i = 0; i < buffer.length; i++) {
+        buffer[i] = Math.floor(Math.random() * 256);
+      }
+      return buffer;
+    },
+    // Minimal subtle crypto polyfill
+    subtle: {
+      digest: async (algorithm: string, data: ArrayBuffer) => {
+        throw new Error('Subtle crypto not supported in this browser');
+      }
+    }
+  };
+
+  return polyfilledCrypto;
+}
+
+// Export polyfilled crypto for use in other modules
+export const crypto = typeof window !== 'undefined' ? (window.crypto || getPolyfillCrypto()) : null;
 
 /**
  * Creates a simple hash that can be used as a fallback when the Web Crypto API
