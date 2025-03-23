@@ -19,16 +19,23 @@ export function formatBytes(bytes: number, decimals = 2) {
 
 /**
  * Checks if the current browser fully supports the Web Crypto API
- * More permissive check that allows partial implementation
+ * Verifies both basic crypto and subtle crypto support
  */
 export function hasWebCryptoSupport(): boolean {
   // Skip check on server
   if (typeof window === 'undefined') return false
   
   try {
-    // Basic check - if window.crypto exists, we'll try to work with it
-    // This is more permissive to allow browsers with partial implementations
-    return !!window.crypto;
+    // Check for basic crypto support
+    const hasCrypto = typeof window.crypto !== 'undefined';
+    
+    // Check for subtle crypto support
+    const hasSubtleCrypto = typeof window.crypto?.subtle !== 'undefined';
+    
+    // Check for specific required methods
+    const hasRequiredMethods = typeof window.crypto?.getRandomValues !== 'undefined';
+    
+    return hasCrypto && hasSubtleCrypto && hasRequiredMethods;
   } catch (err) {
     console.error('Error checking for Web Crypto support:', err)
     return false
