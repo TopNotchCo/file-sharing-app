@@ -16,37 +16,46 @@ interface MainScreenProps {
   onFileShare: (file: File) => void
   onTextShare: (text: string) => void
   onFileDownload: (magnetURI: string) => void
+  onFileDelete: (fileId: string) => void
+  onShareCancel: () => void
   sharedFiles: TorrentFile[]
   currentMagnetLink: string
   onCopyMagnetLink: () => void
   isCopied: boolean
   isClientReady: boolean
+  isSharing: boolean
+  sharingProgress: number
+  sharingStage: 'preparing' | 'hashing' | 'metadata' | 'ready' | null
 }
 
 export default function MainScreen({
   onFileShare,
   onTextShare,
   onFileDownload,
+  onFileDelete,
+  onShareCancel,
   sharedFiles,
   currentMagnetLink,
   onCopyMagnetLink,
   isCopied,
   isClientReady,
+  isSharing,
+  sharingProgress,
+  sharingStage,
 }: MainScreenProps) {
   const [clipboardText, setClipboardText] = useState<string>("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState<boolean>(false)
   const [shareMode, setShareMode] = useState<"file" | "text" | "link" | null>(null)
-  const [magnetLink, setMagnetLink] = useState<string>("")
+  const [downloadMagnetLink, setDownloadMagnetLink] = useState<string>("")
   const [showMagnetInput, setShowMagnetInput] = useState<boolean>(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const magnetInputRef = useRef<HTMLInputElement>(null)
 
-  // Set current magnet link when provided
+  // Set current magnet link when provided (only for upload/sharing)
   useEffect(() => {
     if (currentMagnetLink) {
-      setMagnetLink(currentMagnetLink)
       setShareMode("link")
     }
   }, [currentMagnetLink])
@@ -83,16 +92,27 @@ export default function MainScreen({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0])
-      setShareMode("file")
+    } else {
+      // If no file was selected, revert to default view
+      setShareMode(null)
     }
   }
 
-  const handleFileUpload = () => {
-    if (selectedFile) {
-      onFileShare(selectedFile)
-      setSelectedFile(null)
+  // Use blur event instead of cancel
+  useEffect(() => {
+    const handleFileInputBlur = () => {
+      // Reset to default state if no file was selected
+      if (shareMode === "file" && !selectedFile) {
+        setShareMode(null)
+      }
     }
-  }
+
+    const fileInput = fileInputRef.current
+    if (fileInput) {
+      fileInput.addEventListener('blur', handleFileInputBlur)
+      return () => fileInput.removeEventListener('blur', handleFileInputBlur)
+    }
+  }, [shareMode, selectedFile])
 
   const handleShareClipboard = () => {
     if (clipboardText.trim()) {
@@ -141,14 +161,13 @@ export default function MainScreen({
                 <h3 className="text-lg font-medium gradient-text">Share Content</h3>
                 <Badge 
                   variant={isClientReady ? "outline" : "destructive"}
-                  className={isClientReady ? "border-[#9D4EDD]/30 text-[#9D4EDD] flex items-center gap-2" : ""}
+                  className={isClientReady ? "border-[#9D4EDD]/30 text-[#9D4EDD] flex items-center gap-2" : "hidden"}
                 >
-                  {isClientReady 
-                    ? <>
-                        <div className="w-2 h-2 rounded-full bg-[#9D4EDD] animate-pulse" />
-                        <span>Network Active</span>
-                      </>
-                    : "WebTorrent not ready"
+                  {isClientReady && 
+                    <>
+                      <div className="w-2 h-2 rounded-full bg-[#9D4EDD] animate-pulse" />
+                      <span>Ready to Share</span>
+                    </>
                   }
                 </Badge>
               </div>
@@ -164,7 +183,13 @@ export default function MainScreen({
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
               >
-                <input id="file" type="file" onChange={handleFileChange} className="hidden" ref={fileInputRef} />
+                <input 
+                  id="file" 
+                  type="file" 
+                  onChange={handleFileChange}
+                  className="hidden" 
+                  ref={fileInputRef} 
+                />
                 
                 {/* Share mode selector - only shown when nothing is being shared */}
                 {!shareMode && (
@@ -208,44 +233,174 @@ export default function MainScreen({
                 )}
 
                 {/* File sharing UI */}
-                {shareMode === "file" && selectedFile && (
+                {shareMode === "file" && (
                   <div className="space-y-4 w-full max-w-md">
                     <div className="flex items-center justify-center">
                       <div className="bg-[#9D4EDD]/20 p-3 rounded-full">
-                        <Upload className="h-6 w-6 text-[#9D4EDD]" />
+                        {isSharing ? (
+                          <div className="h-6 w-6 flex items-center justify-center">
+                            <div className="w-4 h-4 border-2 border-[#9D4EDD] border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        ) : selectedFile ? (
+                          <Upload className="h-6 w-6 text-[#9D4EDD]" />
+                        ) : (
+                          <FileIcon className="h-6 w-6 text-[#9D4EDD]" />
+                        )}
                       </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-white">{selectedFile.name}</p>
-                      <p className="text-sm text-gray-400">
-                        {selectedFile.size < 1024 
-                          ? selectedFile.size + " B"
-                          : selectedFile.size < 1048576 
-                            ? (selectedFile.size / 1024).toFixed(1) + " KB"
-                            : (selectedFile.size / 1048576).toFixed(1) + " MB"
-                        }
-                      </p>
-                    </div>
-                    <div className="flex gap-2 justify-center">
-                      <Button
-                        onClick={() => {
-                          setSelectedFile(null);
-                          setShareMode(null);
-                        }}
-                        variant="outline"
-                        className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Cancel
-                      </Button>
-                      <Button 
-                        onClick={handleFileUpload} 
-                        className="bg-[#9D4EDD] hover:bg-[#7B2CBF]"
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Share Now
-                      </Button>
-                    </div>
+                    
+                    {isSharing ? (
+                      <div className="w-full space-y-4">
+                        <div>
+                          <p className="font-medium text-white text-center">{selectedFile?.name}</p>
+                          <p className="text-sm text-gray-400 text-center">
+                            {selectedFile?.size && (
+                              selectedFile.size < 1024 
+                                ? selectedFile.size + " B"
+                                : selectedFile.size < 1048576 
+                                  ? (selectedFile.size / 1024).toFixed(1) + " KB"
+                                  : (selectedFile.size / 1048576).toFixed(1) + " MB"
+                            )}
+                          </p>
+                        </div>
+
+                        {/* Sharing Progress */}
+                        <div className="w-full space-y-4">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-[#9D4EDD]">
+                              {sharingStage === 'preparing' && "Preparing file..."}
+                              {sharingStage === 'hashing' && "Creating secure hash..."}
+                              {sharingStage === 'metadata' && "Generating metadata..."}
+                              {sharingStage === 'ready' && "File ready!"}
+                            </span>
+                            <span className="text-[#9D4EDD]">{Math.round(sharingProgress)}%</span>
+                          </div>
+                          <Progress 
+                            value={sharingProgress} 
+                            className="h-2 w-full"
+                            indicatorClassName="bg-[#9D4EDD]"
+                          />
+                          <p className="text-xs text-center text-muted-foreground">
+                            {sharingStage === 'preparing' && "Setting up file for sharing..."}
+                            {sharingStage === 'hashing' && "Creating unique file fingerprint..."}
+                            {sharingStage === 'metadata' && "Almost done! Finalizing..."}
+                            {sharingStage === 'ready' && "Ready to share!"}
+                          </p>
+                        </div>
+
+                        <Button 
+                          variant="outline"
+                          className="border-[#9D4EDD]/30 bg-background/50 w-full"
+                          disabled
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="h-4 w-4 border-2 border-[#9D4EDD] border-t-transparent rounded-full animate-spin" />
+                            <span>Processing...</span>
+                          </div>
+                        </Button>
+                      </div>
+                    ) : selectedFile ? (
+                      <>
+                        <div>
+                          <p className="font-medium text-white">{selectedFile.name}</p>
+                          <p className="text-sm text-gray-400">
+                            {selectedFile.size < 1024 
+                              ? selectedFile.size + " B"
+                              : selectedFile.size < 1048576 
+                                ? (selectedFile.size / 1024).toFixed(1) + " KB"
+                                : (selectedFile.size / 1048576).toFixed(1) + " MB"
+                            }
+                          </p>
+                        </div>
+                        
+                        {/* Compression Toggle */}
+                        <div className="flex items-center gap-3 w-full max-w-md bg-background/50 rounded-xl p-4 border border-[#9D4EDD]/10">
+                          <div className="flex-1 flex items-center gap-3">
+                            <div className="bg-[#9D4EDD]/5 rounded-lg p-2">
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                className="text-[#9D4EDD]"
+                              >
+                                <path
+                                  d="M20 5L4 5"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                />
+                                <path
+                                  d="M16 9L8 9"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                />
+                                <path
+                                  d="M14 13L10 13"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                />
+                                <path
+                                  d="M12 17L12 17"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                />
+                              </svg>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium">Compress File</span>
+                              <span className="text-xs text-muted-foreground">Reduce file size before sharing</span>
+                            </div>
+                          </div>
+                          <div className="relative flex items-center">
+                            <div className="w-8 h-4 rounded-full bg-[#9D4EDD]/10 cursor-not-allowed">
+                              <div className="absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-[#9D4EDD]/30" />
+                            </div>
+                            <span className="absolute -top-5 right-0 text-[10px] text-[#9D4EDD] opacity-60 font-medium tracking-wide">SOON</span>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 justify-center">
+                          <Button
+                            onClick={() => {
+                              setSelectedFile(null);
+                              setShareMode(null);
+                            }}
+                            variant="outline"
+                            className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
+                          >
+                            <X className="h-4 w-4 mr-2" />
+                            Cancel
+                          </Button>
+                          <Button 
+                            onClick={() => onFileShare(selectedFile)} 
+                            className="bg-[#9D4EDD] hover:bg-[#7B2CBF]"
+                          >
+                            <Upload className="h-4 w-4 mr-2" />
+                            Share Now
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      // Show file selection UI only when no file is selected and not sharing
+                      <div className="text-center space-y-4">
+                        <div className="flex flex-col items-center gap-2">
+                          <h4 className="text-lg font-medium text-[#9D4EDD]">Select a File</h4>
+                          <p className="text-sm text-gray-400">Choose a file to share</p>
+                        </div>
+                        <Button
+                          onClick={() => setShareMode(null)}
+                          variant="outline"
+                          className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -326,7 +481,7 @@ export default function MainScreen({
                     <div className="flex gap-2 justify-center">
                       <Button
                         onClick={() => {
-                          setMagnetLink("");
+                          setDownloadMagnetLink("");
                           setShareMode(null);
                         }}
                         variant="outline"
@@ -343,10 +498,16 @@ export default function MainScreen({
                 {shareMode && (
                   <Button
                     onClick={() => {
+                      if (isSharing) {
+                        // If sharing is in progress, call the cancel handler
+                        onShareCancel();
+                      }
+                      // Reset UI state
                       setShareMode(null);
                       setSelectedFile(null);
                       setClipboardText("");
-                      setMagnetLink("");
+                      setDownloadMagnetLink("");
+                      setIsDragging(false);
                     }}
                     size="icon"
                     variant="ghost"
@@ -405,32 +566,55 @@ export default function MainScreen({
                               </div>
                             </div>
                           </div>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    if (file.magnetURI) {
-                                      navigator.clipboard.writeText(file.magnetURI);
-                                      const toast = document.getElementById('toast');
-                                      if (toast) {
-                                        toast.classList.remove('hidden');
-                                        setTimeout(() => toast.classList.add('hidden'), 2000);
+                          <div className="flex items-center gap-1">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e: React.MouseEvent) => {
+                                      e.stopPropagation();
+                                      if (file.magnetURI) {
+                                        navigator.clipboard.writeText(file.magnetURI);
+                                        const toast = document.getElementById('toast');
+                                        if (toast) {
+                                          toast.classList.remove('hidden');
+                                          setTimeout(() => toast.classList.add('hidden'), 2000);
+                                        }
                                       }
-                                    }
-                                  }}
-                                  className="hover:bg-[#9D4EDD]/20"
-                                >
-                                  <Copy className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Copy magnet link</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                                    }}
+                                    className="h-8 w-8 hover:bg-[#9D4EDD]/20"
+                                  >
+                                    <Copy className="h-4 w-4 text-[#9D4EDD]" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Copy magnet link</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e: React.MouseEvent) => {
+                                      e.stopPropagation();
+                                      onFileDelete(file.id);
+                                    }}
+                                    className="h-8 w-8 hover:bg-[#9D4EDD]/20"
+                                  >
+                                    <X className="h-4 w-4 text-[#9D4EDD]" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Remove file</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
                         </div>
                         
                         {/* Progress bar for uploading files if needed */}
@@ -538,7 +722,7 @@ export default function MainScreen({
                             onClick={(e) => {
                               e.stopPropagation();
                               setShowMagnetInput(false);
-                              setMagnetLink("");
+                              setDownloadMagnetLink("");
                             }}
                             className="opacity-50 hover:opacity-100 hover:bg-[#9D4EDD]/20"
                           >
@@ -550,8 +734,8 @@ export default function MainScreen({
                           <Input
                             ref={magnetInputRef}
                             placeholder="magnet:?xt=urn:btih:..."
-                            value={magnetLink}
-                            onChange={(e) => setMagnetLink(e.target.value)}
+                            value={downloadMagnetLink}
+                            onChange={(e) => setDownloadMagnetLink(e.target.value)}
                             className="bg-secondary/50 border-[#9D4EDD]/30"
                             autoFocus
                             onClick={(e) => e.stopPropagation()}
@@ -559,13 +743,13 @@ export default function MainScreen({
                           <Button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (magnetLink.trim() && magnetLink.startsWith('magnet:')) {
-                                onFileDownload(magnetLink);
-                                setMagnetLink("");
+                              if (downloadMagnetLink.trim() && downloadMagnetLink.startsWith('magnet:')) {
+                                onFileDownload(downloadMagnetLink);
+                                setDownloadMagnetLink("");
                                 setShowMagnetInput(false);
                               }
                             }}
-                            disabled={!magnetLink.trim() || !magnetLink.startsWith('magnet:')}
+                            disabled={!downloadMagnetLink.trim() || !downloadMagnetLink.startsWith('magnet:')}
                             className="bg-[#9D4EDD] hover:bg-[#7B2CBF] whitespace-nowrap"
                           >
                             <Download className="h-4 w-4 mr-2" />
@@ -596,46 +780,169 @@ export default function MainScreen({
                               </div>
                             </div>
                           </div>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    if (file.magnetURI) {
-                                      navigator.clipboard.writeText(file.magnetURI);
-                                      const toast = document.getElementById('toast');
-                                      if (toast) {
-                                        toast.classList.remove('hidden');
-                                        setTimeout(() => toast.classList.add('hidden'), 2000);
+                          <div className="flex items-center gap-1">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e: React.MouseEvent) => {
+                                      e.stopPropagation();
+                                      if (file.magnetURI) {
+                                        navigator.clipboard.writeText(file.magnetURI);
+                                        const toast = document.getElementById('toast');
+                                        if (toast) {
+                                          toast.classList.remove('hidden');
+                                          setTimeout(() => toast.classList.add('hidden'), 2000);
+                                        }
                                       }
-                                    }
-                                  }}
-                                  className="hover:bg-[#9D4EDD]/20"
-                                >
-                                  <Copy className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Copy magnet link</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                                    }}
+                                    className="h-8 w-8 hover:bg-[#9D4EDD]/20"
+                                  >
+                                    <Copy className="h-4 w-4 text-[#9D4EDD]" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Copy magnet link</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e: React.MouseEvent) => {
+                                      e.stopPropagation();
+                                      onFileDelete(file.id);
+                                    }}
+                                    className="h-8 w-8 hover:bg-[#9D4EDD]/20"
+                                  >
+                                    <X className="h-4 w-4 text-[#9D4EDD]" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{file.downloading ? 'Cancel download' : 'Remove file'}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
                         </div>
                         
                         {/* Progress bar for downloading files */}
-                        {file.downloading && typeof file.progress === 'number' && (
-                          <div className="mt-2">
+                        {(file.downloading || file.connecting) && (
+                          <div className="mt-2 space-y-2">
                             <div className="flex justify-between text-xs mb-1">
-                              <span>Downloading</span>
-                              <span>{file.progress}%</span>
+                              <span className="text-[#9D4EDD]">
+                                {file.connecting ? "Connecting to file..." : "Downloading"}
+                              </span>
+                              <span className="text-[#9D4EDD]">
+                                {file.connecting ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 border-2 border-[#9D4EDD] border-t-transparent rounded-full animate-spin" />
+                                  </div>
+                                ) : (
+                                  `${file?.progress?.toString() ?? '0'}%`
+                                )}
+                              </span>
                             </div>
-                            <Progress 
-                              value={file.progress} 
-                              className="h-2"
-                              indicatorClassName="bg-[#9D4EDD]"
-                            />
+                            {!file.connecting && (
+                              <>
+                                <Progress 
+                                  value={file?.progress ?? 0} 
+                                  className="h-2"
+                                  indicatorClassName="bg-[#9D4EDD]"
+                                />
+                                {/* Download stats */}
+                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
+                                  <div className="flex items-center gap-2">
+                                    <svg
+                                      width="12"
+                                      height="12"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      className="text-[#9D4EDD]"
+                                    >
+                                      <path
+                                        d="M2 12L12 22L22 12"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                      />
+                                      <path
+                                        d="M12 2L12 22"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                      />
+                                    </svg>
+                                    <span>
+                                      {file.downloadSpeed ? 
+                                        `${(file.downloadSpeed / (1024 * 1024)).toFixed(2)} MB/s` : 
+                                        'Connecting...'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 justify-end">
+                                    <svg
+                                      width="12"
+                                      height="12"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      className="text-[#9D4EDD]"
+                                    >
+                                      <circle
+                                        cx="12"
+                                        cy="12"
+                                        r="10"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                      />
+                                      <path
+                                        d="M12 6L12 12L16 14"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                      />
+                                    </svg>
+                                    <span>
+                                      {file.downloadSpeed && file.size ? 
+                                        `${formatETA(file.size * (1 - file.progress / 100) / file.downloadSpeed)}` :
+                                        'Calculating...'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 col-span-2">
+                                    <svg
+                                      width="12"
+                                      height="12"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      className="text-[#9D4EDD]"
+                                    >
+                                      <rect
+                                        x="4"
+                                        y="4"
+                                        width="16"
+                                        height="16"
+                                        rx="2"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                      />
+                                      <path
+                                        d="M16 4V20"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                      />
+                                    </svg>
+                                    <span>
+                                      {formatDownloadProgress(file.downloadedSize, file.size)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -657,3 +964,34 @@ export default function MainScreen({
     </div>
   )
 }
+
+// Add these utility functions at the top of the file, after imports
+function formatETA(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return 'Calculating...';
+  if (seconds === 0) return 'Complete';
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  } else {
+    return `${secs}s`;
+  }
+}
+
+function formatSize(bytes: number): string {
+  if (!bytes) return '0 B';
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+function formatDownloadProgress(downloaded?: number, total?: number): string {
+  if (!downloaded || !total) return 'Waiting for data...';
+  return `${formatSize(downloaded)} of ${formatSize(total)}`;
+}
+
