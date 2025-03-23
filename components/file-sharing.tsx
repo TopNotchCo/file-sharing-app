@@ -5,82 +5,154 @@ import { useState, useEffect } from "react"
 import { useToast } from "@/hooks/use-toast"
 import OnboardingScreen from "./onboarding-screen"
 import MainScreen from "./main-screen"
+import { useWebTorrent } from "@/hooks/use-webtorrent"
 
-// Simulated network users
+// Simulated network users - In a real app, we'd implement network discovery
 const MOCK_USERS = [
   { id: 1, name: "Alice" },
   { id: 2, name: "Bob" },
   { id: 3, name: "Charlie" },
 ]
 
-// Initial shared files without timestamps
-const INITIAL_SHARED_FILES = [
-  { id: 1, name: "Project Presentation.pdf", size: "2.4 MB", owner: "Alice" },
-  { id: 2, name: "Meeting Notes.docx", size: "1.1 MB", owner: "Bob" },
-]
-
 export default function FileSharing() {
   const { toast } = useToast()
   const [userName, setUserName] = useState<string>("")
   const [userNameSet, setUserNameSet] = useState<boolean>(false)
-  const [sharedFiles, setSharedFiles] = useState(INITIAL_SHARED_FILES)
   const [connectedUsers] = useState(MOCK_USERS)
+  const [isCopied, setIsCopied] = useState(false)
+  const [currentMagnetLink, setCurrentMagnetLink] = useState<string>("")
+  
+  // Initialize WebTorrent hook
+  const { 
+    isClientReady,
+    sharedFiles, 
+    downloadingFiles,
+    createTorrent, 
+    createTextTorrent, 
+    downloadTorrent 
+  } = useWebTorrent()
 
-  // Add timestamps to shared files after initial render
-  useEffect(() => {
-    setSharedFiles(files => 
-      files.map(file => ({
-        ...file,
-        timestamp: file.id === 1 ? new Date().toISOString() : new Date(Date.now() - 300000).toISOString()
-      }))
-    )
-  }, [])
+  // All files (shared + downloading)
+  const allFiles = [...sharedFiles, ...downloadingFiles]
 
   // Simulate connection to local network
   useEffect(() => {
-    toast({
-      title: "Connected to local network",
-      description: "You can now share files with nearby devices",
-    })
-  }, [toast])
+    if (isClientReady) {
+      toast({
+        title: "Connected to P2P network",
+        description: "You can now share files with other users",
+      })
+    }
+  }, [isClientReady, toast])
 
-  const handleFileShare = (file: File) => {
-    const newFile = {
-      id: sharedFiles.length + 1,
-      name: file.name,
-      size: formatFileSize(file.size),
-      owner: userName || "You",
-      timestamp: new Date().toISOString(),
+  const handleFileShare = async (file: File) => {
+    if (!isClientReady) {
+      toast({
+        title: "WebTorrent not ready",
+        description: "Please wait for WebTorrent to initialize",
+        variant: "destructive",
+      })
+      return
     }
 
-    setSharedFiles([newFile, ...sharedFiles])
-    toast({
-      title: "File shared successfully",
-      description: `${file.name} is now available to others`,
-    })
-  }
-
-  const handleTextShare = (text: string) => {
-    toast({
-      title: "Text shared successfully",
-      description: `"${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" is now available to others`,
-    })
-  }
-
-  const handleFileDownload = (fileId: number) => {
-    const file = sharedFiles.find((f) => f.id === fileId)
-    if (file) {
+    try {
+      const newFile = await createTorrent(file, userName || "You")
+      
+      // Show and copy magnet link
+      setCurrentMagnetLink(newFile.magnetURI)
+      
       toast({
-        title: "Download started",
-        description: `Downloading ${file.name}`,
+        title: "File shared successfully",
+        description: `${file.name} is now available to others. Share the magnet link to allow others to download.`,
+      })
+    } catch (err) {
+      console.error("Error sharing file:", err)
+      toast({
+        title: "Error sharing file",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
       })
     }
   }
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return bytes + " B"
-    else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB"
-    else return (bytes / 1048576).toFixed(1) + " MB"
+  const handleTextShare = async (text: string) => {
+    if (!isClientReady) {
+      toast({
+        title: "WebTorrent not ready",
+        description: "Please wait for WebTorrent to initialize",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const newFile = await createTextTorrent(text, userName || "You")
+      
+      // Show and copy magnet link
+      setCurrentMagnetLink(newFile.magnetURI)
+      
+      toast({
+        title: "Text shared successfully",
+        description: `"${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" is now available to others. Share the magnet link to allow others to download.`,
+      })
+    } catch (err) {
+      console.error("Error sharing text:", err)
+      toast({
+        title: "Error sharing text",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleFileDownload = async (magnetURI: string) => {
+    if (!isClientReady) {
+      toast({
+        title: "WebTorrent not ready",
+        description: "Please wait for WebTorrent to initialize",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      await downloadTorrent(magnetURI)
+      
+      toast({
+        title: "Download started",
+        description: "The file will be automatically downloaded when ready",
+      })
+    } catch (err) {
+      console.error("Error downloading file:", err)
+      toast({
+        title: "Error downloading file",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleCopyMagnetLink = () => {
+    if (!currentMagnetLink) return
+    
+    navigator.clipboard.writeText(currentMagnetLink)
+      .then(() => {
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2000)
+        
+        toast({
+          title: "Magnet link copied",
+          description: "Share this link with others to allow them to download your file",
+        })
+      })
+      .catch(err => {
+        console.error("Error copying to clipboard:", err)
+        toast({
+          title: "Error copying magnet link",
+          description: "Please copy it manually",
+          variant: "destructive",
+        })
+      })
   }
 
   if (!userNameSet) {
@@ -106,7 +178,11 @@ export default function FileSharing() {
       onTextShare={handleTextShare}
       onFileDownload={handleFileDownload}
       connectedUsers={connectedUsers}
-      sharedFiles={sharedFiles}
+      sharedFiles={allFiles}
+      currentMagnetLink={currentMagnetLink}
+      onCopyMagnetLink={handleCopyMagnetLink}
+      isCopied={isCopied}
+      isClientReady={isClientReady}
     />
   )
 }
