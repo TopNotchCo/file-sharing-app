@@ -1,14 +1,13 @@
 import { Suspense } from "react"
-import FileSharing from "@/components/file-sharing"
 import Loading from "@/components/loading"
+import HomeClient from "./home-client"
 
 export default function Home() {
   return (
     <main>
-      <div >
-    
+      <div>
         <Suspense fallback={<Loading />}>
-          <FileSharing />
+          <HomeClient />
         </Suspense>
       </div>
     </main>

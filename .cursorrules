@@ -194,3 +194,5 @@ Specific Guidelines
         Define TypeScript interfaces and types for better code quality.
 
 
+if we get dgram error, we can use this:
+https://gist.github.com/fxwss/12ab9f3d97df88fef535a5fd048608d4

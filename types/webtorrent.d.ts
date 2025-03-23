@@ -67,6 +67,7 @@ declare module 'webtorrent' {
 
   class WebTorrent implements Instance {
     constructor(opts?: WebTorrentOptions)
+    static WEBRTC_SUPPORT: boolean
     ready: boolean
     on(event: 'error', callback: (err: Error | string) => void): void
     on(event: 'torrent', callback: (torrent: Torrent) => void): void

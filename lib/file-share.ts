@@ -1,9 +1,17 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 "use client"
 
+// Import WebTorrent types for type checking
 import type WebTorrent from 'webtorrent'
 import { toast } from '@/hooks/use-toast'
 import constants from './constants'
 import Socket from './socket'
+
+// @ts-expect-error: This path exists in webtorrent but not in @types/webtorrent
+import _WT from 'webtorrent/dist/webtorrent.min.js'
+
+// Cast the imported module to the WebTorrent type
+const WebTorrentConstructor = _WT as typeof WebTorrent
 
 // Define file-related types
 export interface FileMeta {
@@ -46,16 +54,12 @@ export interface WebTorrentClient {
   destroy(callback?: (err: Error | null) => void): void
 }
 
-// Runtime import holder
-let WebTorrentRuntime: typeof WebTorrent | null = null
-
-// WebTorrent configuration
-const TRACKERS = {
+// Simple tracker configuration that works reliably
+const trackers = {
   announce: [
     'wss://tracker.btorrent.xyz', 
     'wss://tracker.openwebtorrent.com', 
-    'wss://tracker.webtorrent.dev',
-    'wss://tracker.files.fm:7073/announce'
+    'wss://tracker.webtorrent.dev'
   ]
 }
 
@@ -82,26 +86,6 @@ export interface ProgressCallback {
 }
 
 /**
- * Load the WebTorrent library dynamically
- */
-const loadWebTorrent = async (): Promise<typeof WebTorrent> => {
-  if (WebTorrentRuntime) return WebTorrentRuntime
-  
-  if (typeof window === 'undefined') {
-    throw new Error('WebTorrent can only be loaded in the browser')
-  }
-  
-  try {
-    const webTorrentModule = await import('webtorrent')
-    WebTorrentRuntime = webTorrentModule.default
-    return WebTorrentRuntime
-  } catch (err) {
-    console.error('Failed to load WebTorrent:', err)
-    throw new Error('Failed to load WebTorrent')
-  }
-}
-
-/**
  * FileShare class for managing file transfers
  */
 export class FileShare {
@@ -119,11 +103,10 @@ export class FileShare {
   
   private async initClient(): Promise<void> {
     try {
-      const WebTorrentClass = await loadWebTorrent()
-      
-      this.torrentClient = new WebTorrentClass({
+      // Create WebTorrent client using the bundled distribution
+      this.torrentClient = new WebTorrentConstructor({
         tracker: {
-          ...TRACKERS,
+          ...trackers,
           rtcConfig: {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19305' },
@@ -144,7 +127,7 @@ export class FileShare {
    * Check if WebRTC is supported
    */
   get isWebRTC(): boolean {
-    return this.isReady && this.torrentClient && !!this.torrentClient.WEBRTC_SUPPORT
+    return !!WebTorrentConstructor.WEBRTC_SUPPORT
   }
   
   /**
@@ -177,7 +160,7 @@ export class FileShare {
         return
       }
 
-      this.torrentClient.add(infoHash, TRACKERS, (torrent: Torrent) => {
+      this.torrentClient.add(infoHash, trackers, (torrent: Torrent) => {
         this._onTorrent({ torrent, onProgress, onDone })
       })
     })
@@ -249,12 +232,7 @@ export class FileShare {
 
     const update = () => {
       if (onProgress) {
-        onProgress({
-          progress: torrent.progress,
-          downloadSpeed: torrent.downloadSpeed,
-          uploadSpeed: torrent.uploadSpeed,
-          numPeers: torrent.numPeers
-        })
+        onProgress(torrent)
       }
 
       if (!updateInterval) {
@@ -405,7 +383,7 @@ export class FileShare {
         })
       }
 
-      this.torrentClient.seed(files, TRACKERS, (torrent: Torrent) => {
+      this.torrentClient.seed(files, trackers, (torrent: Torrent) => {
         this._onTorrent({
           torrent,
           onProgress: onTorrentProgress,

@@ -12,80 +12,73 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 interface MainScreenProps {
   userName: string
+  connectedUsers: Array<{ id: string; name: string; lastSeen: number }>
+  sharedFiles: Array<{ id: string; name: string; size: string; owner: string }>
   onFileShare: (file: File) => void
   onTextShare: (text: string) => void
   onFileDownload: (fileId: string) => void
-  connectedUsers: Array<{ id: string; name: string; lastSeen: number }>
-  sharedFiles: Array<{ id: string; name: string; size: string; owner: string }>
 }
 
-export default function MainScreen({
-  userName,
-  onFileShare,
-  onTextShare,
-  onFileDownload,
-  connectedUsers,
-  sharedFiles,
-}: MainScreenProps) {
-  const [clipboardText, setClipboardText] = useState<string>("")
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [isDragging, setIsDragging] = useState<boolean>(false)
-  const [shareMode, setShareMode] = useState<"file" | "text" | null>(null)
+export default function MainScreen({ userName, ...props }: MainScreenProps) {
+  const [state, setState] = useState({
+    clipboardText: '',
+    selectedFile: null as File | null,
+    isDragging: false,
+    shareMode: null as 'file' | 'text' | null
+  })
+
+  const handlers = {
+    file: {
+      change: (e: React.ChangeEvent<HTMLInputElement>) => 
+        e.target.files?.[0] && setState(s => ({
+          ...s, 
+          selectedFile: e.target.files[0], 
+          shareMode: 'file'
+        })),
+      upload: () => {
+        if (state.selectedFile) {
+          props.onFileShare(state.selectedFile)
+          setState(s => ({...s, selectedFile: null, shareMode: null}))
+        }
+      }
+    },
+    text: {
+      share: () => {
+        if (state.clipboardText.trim()) {
+          props.onTextShare(state.clipboardText)
+          setState(s => ({...s, clipboardText: '', shareMode: null}))
+        }
+      }
+    }
+  }
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Auto-detect clipboard content when focused
   useEffect(() => {
     const handlePaste = async () => {
       try {
         const clipboardItems = await navigator.clipboard.read();
         for (const item of clipboardItems) {
-          // Check if clipboard has text
           if (item.types.includes('text/plain')) {
             const blob = await item.getType('text/plain');
             const text = await blob.text();
-            if (text && !clipboardText) {
-              setClipboardText(text);
-              setShareMode("text");
+            if (text && !state.clipboardText) {
+              setState(s => ({...s, clipboardText: text, shareMode: 'text'}))
             }
           }
         }
       } catch {
-        // Clipboard API not available or permission denied
         console.log("Clipboard detection not available");
       }
     };
 
-    // Try to detect clipboard content when textarea is focused
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.addEventListener('focus', handlePaste);
       return () => textarea.removeEventListener('focus', handlePaste);
     }
-  }, [clipboardText]);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0])
-      setShareMode("file")
-    }
-  }
-
-  const handleFileUpload = () => {
-    if (selectedFile) {
-      onFileShare(selectedFile)
-      setSelectedFile(null)
-      setShareMode(null)
-    }
-  }
-
-  const handleShareClipboard = () => {
-    if (clipboardText.trim()) {
-      onTextShare(clipboardText)
-      setClipboardText("")
-      setShareMode(null)
-    }
-  }
+  }, [state.clipboardText]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -95,24 +88,22 @@ export default function MainScreen({
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragging(true)
-    setShareMode("file")
+    setState(s => ({...s, isDragging: true, shareMode: 'file'}))
   }, [])
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragging(false)
+    setState(s => ({...s, isDragging: false}))
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragging(false)
+    setState(s => ({...s, isDragging: false}))
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0])
-      setShareMode("file")
+      setState(s => ({...s, selectedFile: e.dataTransfer.files[0], shareMode: 'file'}))
     }
   }, [])
 
@@ -122,7 +113,6 @@ export default function MainScreen({
     else return (bytes / 1048576).toFixed(1) + " MB"
   }
 
-  // Function to check if a user is currently active (within last 10 seconds)
   const isUserActive = (lastSeen: number) => {
     return Date.now() - lastSeen < 10000
   }
@@ -130,21 +120,19 @@ export default function MainScreen({
   return (
     <div className="flex flex-col gap-6">
       <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
-      
         <CardContent className="pt-4">
           <div className="flex flex-col md:flex-row gap-6">
-            {/* Unified sharing area - always visible */}
             <div className="flex-1 space-y-6">
               <div className="flex items-center justify-between pt-4">
                 <h3 className="text-lg font-medium gradient-text">Share Content</h3>
                 <Badge variant="outline" className="border-[#9D4EDD]/30 text-[#9D4EDD]">
-                  {connectedUsers.length} {connectedUsers.length === 1 ? 'device' : 'devices'}
+                  {props.connectedUsers.length} {props.connectedUsers.length === 1 ? 'device' : 'devices'}
                 </Badge>
               </div>
               
               <div 
                 className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors min-h-[200px] flex flex-col items-center justify-center ${
-                  isDragging
+                  state.isDragging
                     ? "border-[#9D4EDD] bg-[#9D4EDD]/10"
                     : "border-[#9D4EDD]/30 hover:border-[#9D4EDD]/60"
                 }`}
@@ -153,10 +141,9 @@ export default function MainScreen({
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
               >
-                <input id="file" type="file" onChange={handleFileChange} className="hidden" ref={fileInputRef} />
+                <input id="file" type="file" onChange={handlers.file.change} className="hidden" ref={fileInputRef} />
                 
-                {/* Share mode selector - only shown when nothing is being shared */}
-                {!shareMode && (
+                {!state.shareMode && (
                   <div className="space-y-6">
                     <div className="flex items-center justify-center">
                       <div className="bg-[#9D4EDD]/20 p-4 rounded-full">
@@ -165,12 +152,12 @@ export default function MainScreen({
                     </div>
                     <div>
                       <h3 className="text-lg font-medium">Drop a file or paste text to share</h3>
-                      <p className="text-sm text-gray-400 mt-1">Instantly share with {connectedUsers.length} connected devices</p>
+                      <p className="text-sm text-gray-400 mt-1">Instantly share with {props.connectedUsers.length} connected devices</p>
                     </div>
                     <div className="flex gap-3 justify-center">
                       <Button
                         onClick={() => {
-                          setShareMode("file");
+                          setState(s => ({...s, shareMode: 'file'}))
                           fileInputRef.current?.click();
                         }}
                         variant="outline"
@@ -181,7 +168,7 @@ export default function MainScreen({
                       </Button>
                       <Button
                         onClick={() => {
-                          setShareMode("text");
+                          setState(s => ({...s, shareMode: 'text'}))
                           setTimeout(() => textareaRef.current?.focus(), 100);
                         }}
                         variant="outline"
@@ -194,8 +181,7 @@ export default function MainScreen({
                   </div>
                 )}
 
-                {/* File sharing UI */}
-                {shareMode === "file" && selectedFile && (
+                {state.shareMode === "file" && state.selectedFile && (
                   <div className="space-y-4 w-full max-w-md">
                     <div className="flex items-center justify-center">
                       <div className="bg-[#9D4EDD]/20 p-3 rounded-full">
@@ -203,14 +189,13 @@ export default function MainScreen({
                       </div>
                     </div>
                     <div>
-                      <p className="font-medium text-white">{selectedFile.name}</p>
-                      <p className="text-sm text-gray-400">{formatFileSize(selectedFile.size)}</p>
+                      <p className="font-medium text-white">{state.selectedFile.name}</p>
+                      <p className="text-sm text-gray-400">{formatFileSize(state.selectedFile.size)}</p>
                     </div>
                     <div className="flex gap-2 justify-center">
                       <Button
                         onClick={() => {
-                          setSelectedFile(null);
-                          setShareMode(null);
+                          setState(s => ({...s, selectedFile: null, shareMode: null}))
                         }}
                         variant="outline"
                         className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
@@ -219,7 +204,7 @@ export default function MainScreen({
                         Cancel
                       </Button>
                       <Button 
-                        onClick={handleFileUpload} 
+                        onClick={handlers.file.upload} 
                         className="bg-[#9D4EDD] hover:bg-[#7B2CBF]"
                       >
                         <Upload className="h-4 w-4 mr-2" />
@@ -229,8 +214,7 @@ export default function MainScreen({
                   </div>
                 )}
 
-                {/* Text sharing UI */}
-                {shareMode === "text" && (
+                {state.shareMode === "text" && (
                   <div className="space-y-4 w-full max-w-md">
                     <div className="flex items-center justify-center">
                       <div className="bg-[#9D4EDD]/20 p-3 rounded-full">
@@ -240,16 +224,15 @@ export default function MainScreen({
                     <Textarea
                       ref={textareaRef}
                       placeholder="Type or paste text to share"
-                      value={clipboardText}
-                      onChange={(e) => setClipboardText(e.target.value)}
+                      value={state.clipboardText}
+                      onChange={(e) => setState(s => ({...s, clipboardText: e.target.value}))}
                       className="min-h-[100px] bg-secondary/50 border-[#9D4EDD]/30"
                       autoFocus
                     />
                     <div className="flex gap-2 justify-center">
                       <Button
                         onClick={() => {
-                          setClipboardText("");
-                          setShareMode(null);
+                          setState(s => ({...s, clipboardText: '', shareMode: null}))
                         }}
                         variant="outline"
                         className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
@@ -258,8 +241,8 @@ export default function MainScreen({
                         Cancel
                       </Button>
                       <Button
-                        onClick={handleShareClipboard}
-                        disabled={!clipboardText.trim()}
+                        onClick={handlers.text.share}
+                        disabled={!state.clipboardText.trim()}
                         className="bg-[#9D4EDD] hover:bg-[#7B2CBF]"
                       >
                         <Clipboard className="h-4 w-4 mr-2" />
@@ -269,13 +252,10 @@ export default function MainScreen({
                   </div>
                 )}
 
-                {/* Close button for any share mode */}
-                {shareMode && (
+                {state.shareMode && (
                   <Button
                     onClick={() => {
-                      setShareMode(null);
-                      setSelectedFile(null);
-                      setClipboardText("");
+                      setState(s => ({...s, selectedFile: null, clipboardText: ''}))
                     }}
                     size="icon"
                     variant="ghost"
@@ -287,18 +267,17 @@ export default function MainScreen({
               </div>
             </div>
 
-            {/* Available files - always visible */}
             <div className="flex-1 space-y-6">
               <div className="flex items-center justify-between pt-4">
                 <h3 className="text-lg font-medium gradient-text">Available Files</h3>
                 <Badge variant="outline" className="border-[#9D4EDD]/30 text-[#9D4EDD]">
-                  {sharedFiles.length} {sharedFiles.length === 1 ? 'item' : 'items'}
+                  {props.sharedFiles.length} {props.sharedFiles.length === 1 ? 'item' : 'items'}
                 </Badge>
               </div>
               
-              {sharedFiles.length > 0 ? (
+              {props.sharedFiles.length > 0 ? (
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                  {sharedFiles.map((file) => (
+                  {props.sharedFiles.map((file) => (
                     <div
                       key={file.id}
                       className="flex items-center justify-between p-3 rounded-lg border border-[#9D4EDD]/30 bg-secondary/30 hover:bg-secondary/50 transition-colors"
@@ -322,7 +301,7 @@ export default function MainScreen({
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => onFileDownload(file.id)}
+                              onClick={() => props.onFileDownload(file.id)}
                               className="hover:bg-[#9D4EDD]/20"
                             >
                               <Download className="h-4 w-4" />
@@ -364,13 +343,13 @@ export default function MainScreen({
                 <CardTitle className="gradient-text text-xl">{userName}</CardTitle>
                 <CardDescription className="flex items-center gap-2">
                   <div className="flex -space-x-2">
-                    {connectedUsers.map((user) => (
+                    {props.connectedUsers.map((user) => (
                       <Avatar key={user.id} className="h-6 w-6 border-2 border-background bg-[#7B2CBF]">
                         <AvatarFallback className="text-xs">{user.name.charAt(0)}</AvatarFallback>
                       </Avatar>
                     ))}
                   </div>
-                  <span>{connectedUsers.length} users connected</span>
+                  <span>{props.connectedUsers.length} users connected</span>
                 </CardDescription>
               </div>
             </div>
@@ -386,7 +365,7 @@ export default function MainScreen({
               <h3 className="text-sm font-medium text-muted-foreground">Connected Users</h3>
             </div>
             <div className="divide-y divide-[#9D4EDD]/20">
-              {connectedUsers.map((user) => (
+              {props.connectedUsers.map((user) => (
                 <div key={user.id} className="flex items-center justify-between px-4 py-3 hover:bg-[#9D4EDD]/5 transition-colors">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-8 w-8 border border-[#9D4EDD]/50 bg-[#7B2CBF]">
@@ -404,7 +383,7 @@ export default function MainScreen({
                   }`} />
                 </div>
               ))}
-              {connectedUsers.length === 0 && (
+              {props.connectedUsers.length === 0 && (
                 <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                   <Clock className="h-8 w-8 mx-auto mb-2 text-[#9D4EDD]/40" />
                   <p>No other users connected</p>

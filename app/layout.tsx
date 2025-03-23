@@ -5,6 +5,12 @@ import "./globals.css"
 
 const inter = Inter({ subsets: ["latin"] })
 
+// Polyfill global for browser
+const globalPolyfill = `
+  globalThis.global = globalThis;
+  globalThis.process = globalThis.process || { env: {} };
+`
+
 export const metadata: Metadata = {
   title: "AirShare - Local Wi-Fi File Sharing",
   description: "Share files and clipboard text with devices on your local network",
@@ -20,6 +26,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className="dark">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: globalPolyfill }} />
+      </head>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
           {children}

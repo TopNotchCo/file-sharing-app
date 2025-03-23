@@ -1,8 +1,22 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useToast } from './use-toast'
-import { createWebTorrentClient } from '@/lib/webtorrent-client'
+
+// Import WebTorrent types for type checking
+import type WebTorrent from 'webtorrent'
+
+// Define WebTorrentConstructor as a variable instead of importing directly
+let WebTorrentConstructor: typeof WebTorrent | null = null
+
+// Polyfill global for WebTorrent
+if (typeof globalThis !== 'undefined') {
+  // @ts-ignore
+  globalThis.global = globalThis;
+  // @ts-ignore
+  globalThis.process = globalThis.process || { env: {} };
+}
 
 // Interface for our shared file state
 export interface SharedFile {
@@ -47,6 +61,7 @@ interface WebTorrentRuntimeTorrent {
   off(event: string, callback: (arg?: unknown) => void): void
   destroy(): void
   length: number
+  announce?: () => void
 }
 
 // Interface for the WebTorrent client
@@ -60,14 +75,46 @@ interface WebTorrentClient {
   torrents?: WebTorrentRuntimeTorrent[]
 }
 
+// Simple tracker configuration that works reliably
+const trackers = {
+  announce: [
+    'wss://tracker.btorrent.xyz', 
+    'wss://tracker.openwebtorrent.com', 
+    'wss://tracker.webtorrent.dev',
+    'wss://tracker.files.fm:7073/announce',
+    'wss://tracker.sloppyta.co:443/announce',
+    'wss://tracker.novage.com.ua:443/announce'
+  ]
+}
+
+// Load WebTorrent only on the client side
+const loadWebTorrent = async (): Promise<typeof WebTorrent> => {
+  if (!WebTorrentConstructor) {
+    try {
+      // Dynamically import WebTorrent only on the client
+      // @ts-ignore - Specific path import to avoid source map issues
+      const webTorrentModule = await import('webtorrent')
+      WebTorrentConstructor = webTorrentModule.default || webTorrentModule
+    } catch (error) {
+      console.error('Failed to load WebTorrent:', error)
+      throw error
+    }
+  }
+  return WebTorrentConstructor
+}
+
 export function useWebTorrent() {
   const [isConnected, setIsConnected] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'failed'>('idle')
+  const [peerConnectionIssue, setPeerConnectionIssue] = useState(false)
   const clientRef = useRef<WebTorrentClient | null>(null)
   const isInitializingRef = useRef(false)
   const isDestroyingRef = useRef(false)
   const { toast } = useToast()
   const [files, setFiles] = useState<SharedFile[]>([])
   const isBrowser = typeof window !== 'undefined'
+  const reconnectAttemptsRef = useRef(0)
+  const maxReconnectAttempts = 5  // Increased from 3 to 5
 
   // Safe cleanup function
   const cleanupClient = useCallback(() => {
@@ -107,27 +154,86 @@ export function useWebTorrent() {
 
     try {
       isInitializingRef.current = true
+      setConnectionStatus('connecting')
       
       // Cleanup existing client
       await cleanupClient()
 
-      // Create new client
-      const client = await createWebTorrentClient()
+      // Load WebTorrent constructor if not already loaded
+      const WT = await loadWebTorrent()
+
+      // Create client using the WebTorrent constructor from the bundled file
+      // This avoids the dgram dependency issue
+      const client = new WT({
+        tracker: {
+          ...trackers,
+          rtcConfig: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19305' },
+              { urls: 'stun:stun1.l.google.com:19305' },
+              { urls: 'stun:stun2.l.google.com:19305' },
+              { urls: 'stun:stun3.l.google.com:19305' },
+              { urls: 'stun:stun4.l.google.com:19305' },
+              { urls: 'stun:global.stun.twilio.com:3478?transport=udp' },
+              { 
+                urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+                username: 'anonymous',
+                credential: 'anonymous'
+              }
+            ]
+          }
+        }
+      }) as unknown as WebTorrentClient
       
-      clientRef.current = client as unknown as WebTorrentClient
+      clientRef.current = client
 
       client.on('error', (err: unknown) => {
         console.error('WebTorrent client error:', err)
-        toast({
-          title: "Connection error",
-          description: "Trying to reconnect...",
-          variant: "destructive"
-        })
+        
+        // Check if the error message contains WebRTC ICE failure indicators
+        const errorMsg = String(err)
+        const isIceFailure = errorMsg.includes('ICE failed') || 
+                            errorMsg.includes('ICE connection') || 
+                            errorMsg.includes('RTCPeerConnection')
+        
+        if (isIceFailure) {
+          setPeerConnectionIssue(true)
+          setConnectionStatus('failed')
+          toast({
+            title: "Connection failed",
+            description: "Unable to establish peer connection. Your network may be blocking WebRTC.",
+            variant: "destructive"
+          })
+        } else {
+          toast({
+            title: "Connection error",
+            description: "Trying to reconnect...",
+            variant: "destructive"
+          })
+          
+          // Only attempt reconnection if we haven't exceeded the limit
+          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+            reconnectAttemptsRef.current++
+            setTimeout(() => {
+              initializeClient()
+            }, 2000) // Wait 2 seconds before reconnecting
+          } else {
+            setConnectionStatus('failed')
+            toast({
+              title: "Connection failed",
+              description: "Maximum reconnection attempts reached. Please reload the page to try again.",
+              variant: "destructive"
+            })
+          }
+        }
       })
 
       const checkReady = () => {
         if (client.ready) {
           setIsConnected(true)
+          setConnectionStatus('connected')
+          setPeerConnectionIssue(false)
+          reconnectAttemptsRef.current = 0 // Reset reconnect attempts on successful connection
           toast({
             title: "Connected successfully",
             description: "Ready to share files",
@@ -139,6 +245,7 @@ export function useWebTorrent() {
       client.once('ready', checkReady)
     } catch (error) {
       console.error('Failed to initialize WebTorrent:', error)
+      setConnectionStatus('failed')
       toast({
         title: "Connection failed",
         description: "Could not initialize file sharing",
@@ -154,12 +261,26 @@ export function useWebTorrent() {
     if (!isBrowser) return
     
     // Initialize client on mount
-    initializeClient()
-
+    let mounted = true
+    
+    if (mounted) {
+      // Use setTimeout to ensure this runs after hydration
+      const timer = setTimeout(() => {
+        initializeClient()
+      }, 100)
+      
+      return () => {
+        mounted = false
+        clearTimeout(timer)
+        cleanupClient()
+      }
+    }
+    
     return () => {
+      mounted = false
       cleanupClient()
     }
-  }, [toast, cleanupClient, isBrowser, initializeClient])
+  }, [cleanupClient, isBrowser, initializeClient])
 
   // Share files
   const shareFiles = useCallback(async (selectedFiles: File[]) => {
@@ -194,14 +315,8 @@ export function useWebTorrent() {
       const client = clientRef.current
       console.log('Client ready, creating torrent from files:', selectedFiles.map(f => f.name).join(', '))
 
-      // Create a new torrent from the files
-      client.seed(selectedFiles, {
-        announce: [
-          'wss://tracker.openwebtorrent.com',
-          'wss://tracker.webtorrent.dev',
-          'wss://tracker.novage.com.ua'
-        ]
-      }, (torrent: WebTorrentRuntimeTorrent) => {
+      // Create a new torrent from the files using the simple configuration
+      client.seed(selectedFiles, trackers, (torrent: WebTorrentRuntimeTorrent) => {
         console.log('Client is seeding:', torrent.infoHash)
         console.log('Magnet URI generated:', torrent.magnetURI)
 
@@ -312,7 +427,25 @@ export function useWebTorrent() {
   const downloadFiles = useCallback(async (magnetURI: string) => {
     // Don't run on server
     if (!isBrowser) return
-    if (!clientRef.current) return
+    
+    // Check connection status
+    if (connectionStatus === 'failed') {
+      toast({
+        title: 'Connection Error',
+        description: 'WebRTC connection failed. Please reload the page or try a different browser.',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    if (!clientRef.current) {
+      toast({
+        title: 'Connection Error',
+        description: 'WebTorrent client not initialized. Please reload the page.',
+        variant: 'destructive',
+      })
+      return
+    }
 
     try {
       const client = clientRef.current
@@ -351,14 +484,59 @@ export function useWebTorrent() {
         }
       }
 
-      client.add(magnetURI, {
-        announce: [
-          'wss://tracker.openwebtorrent.com',
-          'wss://tracker.webtorrent.dev',
-          'wss://tracker.novage.com.ua'
-        ]
-      }, (torrent: WebTorrentRuntimeTorrent) => {
+      // Add a temporary placeholder to show something is happening
+      const placeholderFile: SharedFile = {
+        name: 'Connecting to peers...',
+        size: 0,
+        type: 'application/octet-stream',
+        progress: 0,
+        downloadSpeed: 0,
+        uploadSpeed: 0,
+        status: 'downloading',
+        hash: infoHash ? `${infoHash}-placeholder` : `placeholder-${Date.now()}`,
+      }
+      
+      setFiles(prev => [...prev, placeholderFile])
+      
+      // Set timeout to detect if connection fails to establish
+      const connectionTimeout = setTimeout(() => {
+        // Remove placeholder if still present
+        setFiles(prev => prev.filter(f => f.hash !== placeholderFile.hash))
+        
+        toast({
+          title: 'Connection Timeout',
+          description: 'Could not connect to any peers. The link may be invalid or no seeders are available.',
+          variant: 'destructive',
+        })
+      }, 60000) // 60 seconds timeout (increased from 30)
+
+      client.add(magnetURI, trackers, (torrent: WebTorrentRuntimeTorrent) => {
+        // Clear the connection timeout
+        clearTimeout(connectionTimeout)
+        
+        // Remove the placeholder
+        setFiles(prev => prev.filter(f => f.hash !== placeholderFile.hash))
+        
         console.log('Client is downloading:', torrent.infoHash)
+        console.log('Connected to', torrent.numPeers, 'peers')
+
+        // Handle the case of zero peers or slow connections
+        if (torrent.numPeers === 0) {
+          const zeroPeersTimeout = setTimeout(() => {
+            if (torrent.numPeers === 0 && torrent.progress === 0) {
+              toast({
+                title: 'No peers found',
+                description: 'Could not find any peers sharing this file. The link may be invalid or no one is currently sharing this file.',
+                variant: 'destructive',
+              })
+            }
+          }, 30000) // Check after 30 seconds (increased from 15)
+          
+          // Clean up timeout when peers are found
+          torrent.on('wire', () => {
+            clearTimeout(zeroPeersTimeout)
+          })
+        }
 
         // Add files to state
         const newFiles = torrent.files.map((file: WebTorrentRuntimeFile, index) => ({
@@ -515,10 +693,12 @@ export function useWebTorrent() {
         variant: 'destructive',
       })
     }
-  }, [isBrowser, toast, files])
+  }, [isBrowser, toast, files, connectionStatus])
 
   return {
     isConnected,
+    connectionStatus,
+    peerConnectionIssue,
     files,
     shareFiles,
     downloadFiles,

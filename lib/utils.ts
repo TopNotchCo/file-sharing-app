@@ -16,3 +16,71 @@ export function formatBytes(bytes: number, decimals = 2) {
 
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`
 }
+
+/**
+ * Checks if the current browser fully supports the Web Crypto API
+ * More permissive check that allows partial implementation
+ */
+export function hasWebCryptoSupport(): boolean {
+  // Skip check on server
+  if (typeof window === 'undefined') return false
+  
+  try {
+    // Basic check - if window.crypto exists, we'll try to work with it
+    // This is more permissive to allow browsers with partial implementations
+    return !!window.crypto;
+  } catch (err) {
+    console.error('Error checking for Web Crypto support:', err)
+    return false
+  }
+}
+
+/**
+ * Creates a simple hash that can be used as a fallback when the Web Crypto API
+ * is not available. Not cryptographically secure but works for basic use cases.
+ * @param data String to hash
+ * @returns A simple hash string
+ */
+export function createSimpleHash(data: string): string {
+  let hash = 0;
+  
+  if (data.length === 0) return hash.toString(16);
+  
+  for (let i = 0; i < data.length; i++) {
+    const char = data.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  
+  // Create a hex string and ensure it's positive
+  const hexHash = Math.abs(hash).toString(16).padStart(8, '0');
+  
+  // Add some uniqueness using timestamp
+  const timestamp = Date.now().toString(16);
+  
+  return `${hexHash}-${timestamp}`;
+}
+
+/**
+ * Creates a pseudo-random identifier that can be used when crypto.getRandomValues
+ * is not available.
+ * @param length Length of the random ID to generate
+ * @returns A random-like string
+ */
+export function createPseudoRandomId(length: number = 40): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  
+  // Add timestamp to make it more unique
+  const timestamp = Date.now().toString(36);
+  result += timestamp;
+  
+  // Fill the rest with pseudo-random chars
+  const remainingLength = length - timestamp.length;
+  for (let i = 0; i < remainingLength; i++) {
+    const randomIndex = Math.floor(Math.random() * chars.length);
+    result += chars.charAt(randomIndex);
+  }
+  
+  return result;
+}
