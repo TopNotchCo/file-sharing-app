@@ -2,10 +2,9 @@
 
 import type React from "react"
 import { useState, useRef, useCallback, useEffect } from "react"
-import { Upload, Clipboard, Download, X, FileText, File as FileIcon, Clock, Copy, Check, Link } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Upload, Clipboard, Download, X, FileText, File as FileIcon, Copy, Check, Link, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -14,11 +13,10 @@ import { Progress } from "@/components/ui/progress"
 import { TorrentFile } from "@/hooks/use-webtorrent"
 
 interface MainScreenProps {
-  onFileShare: (file: File) => Promise<void>
-  onTextShare: (text: string) => Promise<void>
-  onFileDownload: (magnetURI: string) => Promise<void>
-  connectedUsers: Array<{ id: number; name: string }>
-  sharedFiles: any[]
+  onFileShare: (file: File) => void
+  onTextShare: (text: string) => void
+  onFileDownload: (magnetURI: string) => void
+  sharedFiles: TorrentFile[]
   currentMagnetLink: string
   onCopyMagnetLink: () => void
   isCopied: boolean
@@ -29,18 +27,18 @@ export default function MainScreen({
   onFileShare,
   onTextShare,
   onFileDownload,
-  connectedUsers,
   sharedFiles,
   currentMagnetLink,
   onCopyMagnetLink,
   isCopied,
-  isClientReady
+  isClientReady,
 }: MainScreenProps) {
   const [clipboardText, setClipboardText] = useState<string>("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState<boolean>(false)
   const [shareMode, setShareMode] = useState<"file" | "text" | "link" | null>(null)
   const [magnetLink, setMagnetLink] = useState<string>("")
+  const [showMagnetInput, setShowMagnetInput] = useState<boolean>(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const magnetInputRef = useRef<HTMLInputElement>(null)
@@ -53,7 +51,6 @@ export default function MainScreen({
     }
   }, [currentMagnetLink])
 
-  // Auto-detect clipboard content when focused
   useEffect(() => {
     const handlePaste = async () => {
       try {
@@ -104,14 +101,6 @@ export default function MainScreen({
     }
   }
 
-  const handleDownloadFromMagnet = () => {
-    if (magnetLink.trim()) {
-      onFileDownload(magnetLink)
-      setMagnetLink("")
-      setShareMode(null)
-    }
-  }
-
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
@@ -141,27 +130,8 @@ export default function MainScreen({
     }
   }, [])
 
-  const formatTimeAgo = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.round(diffMs / 60000);
-    
-    if (diffMins < 1) return 'Just now';
-    if (diffMins === 1) return '1 minute ago';
-    if (diffMins < 60) return `${diffMins} minutes ago`;
-    
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours === 1) return '1 hour ago';
-    if (diffHours < 24) return `${diffHours} hours ago`;
-    
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return '1 day ago';
-    return `${diffDays} days ago`;
-  };
-
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 max-w-4xl mx-auto px-4 sm:px-6 w-full">
       <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
         <CardContent className="pt-4">
           <div className="flex flex-col md:flex-row gap-6">
@@ -171,10 +141,13 @@ export default function MainScreen({
                 <h3 className="text-lg font-medium gradient-text">Share Content</h3>
                 <Badge 
                   variant={isClientReady ? "outline" : "destructive"}
-                  className={isClientReady ? "border-[#9D4EDD]/30 text-[#9D4EDD]" : ""}
+                  className={isClientReady ? "border-[#9D4EDD]/30 text-[#9D4EDD] flex items-center gap-2" : ""}
                 >
                   {isClientReady 
-                    ? `${connectedUsers.length} ${connectedUsers.length === 1 ? 'device' : 'devices'}`
+                    ? <>
+                        <div className="w-2 h-2 rounded-full bg-[#9D4EDD] animate-pulse" />
+                        <span>Network Active</span>
+                      </>
                     : "WebTorrent not ready"
                   }
                 </Badge>
@@ -229,18 +202,6 @@ export default function MainScreen({
                       >
                         <FileText className="h-4 w-4 mr-2" />
                         Share Text
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setShareMode("link");
-                          setTimeout(() => magnetInputRef.current?.focus(), 100);
-                        }}
-                        variant="outline"
-                        className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
-                        disabled={!isClientReady}
-                      >
-                        <Link className="h-4 w-4 mr-2" />
-                        Download from Magnet
                       </Button>
                     </div>
                   </div>
@@ -336,14 +297,6 @@ export default function MainScreen({
                         <Link className="h-6 w-6 text-[#9D4EDD]" />
                       </div>
                     </div>
-                    <Input
-                      ref={magnetInputRef}
-                      placeholder="Paste magnet URI here"
-                      value={magnetLink}
-                      onChange={(e) => setMagnetLink(e.target.value)}
-                      className="bg-secondary/50 border-[#9D4EDD]/30"
-                      autoFocus
-                    />
                     
                     {currentMagnetLink && (
                       <div className="flex flex-col items-center">
@@ -382,17 +335,6 @@ export default function MainScreen({
                         <X className="h-4 w-4 mr-2" />
                         Cancel
                       </Button>
-                      
-                      {!currentMagnetLink && (
-                        <Button
-                          onClick={handleDownloadFromMagnet}
-                          disabled={!magnetLink.trim() || !magnetLink.startsWith('magnet:')}
-                          className="bg-[#9D4EDD] hover:bg-[#7B2CBF]"
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
-                        </Button>
-                      )}
                     </div>
                   </div>
                 )}
@@ -415,146 +357,259 @@ export default function MainScreen({
                 )}
               </div>
             </div>
-
-            {/* Available files - always visible */}
-            <div className="flex-1 space-y-6">
-              <div className="flex items-center justify-between pt-4">
-                <h3 className="text-lg font-medium gradient-text">Available Files</h3>
-                <Badge variant="outline" className="border-[#9D4EDD]/30 text-[#9D4EDD]">
-                  {sharedFiles.length} {sharedFiles.length === 1 ? 'item' : 'items'}
-                </Badge>
-              </div>
-              
-              {sharedFiles.length > 0 ? (
-                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                  {sharedFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      className="flex flex-col p-3 rounded-lg border border-[#9D4EDD]/30 bg-secondary/30 hover:bg-secondary/50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-[#9D4EDD]/10 p-2 rounded-full">
-                            <FileIcon className="h-5 w-5 text-[#9D4EDD]" />
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{file.name}</span>
-                            <div className="flex items-center gap-2 text-xs text-gray-400">
-                              <span>{file.size}</span>
-                              <span>•</span>
-                              <span>From: {file.owner}</span>
-                              <span>•</span>
-                              <span>{file.timestamp ? formatTimeAgo(file.timestamp) : 'Unknown'}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => {
-                                  // Copy the magnet link to clipboard
-                                  if (file.magnetURI) {
-                                    navigator.clipboard.writeText(file.magnetURI);
-                                    
-                                    // Show notification 
-                                    const toast = document.getElementById('toast');
-                                    if (toast) {
-                                      toast.classList.remove('hidden');
-                                      setTimeout(() => toast.classList.add('hidden'), 2000);
-                                    }
-                                  }
-                                }}
-                                className="hover:bg-[#9D4EDD]/20"
-                              >
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Copy magnet link</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                      
-                      {/* Progress bar for downloading files */}
-                      {file.downloading && typeof file.progress === 'number' && (
-                        <div className="mt-2">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span>Downloading</span>
-                            <span>{file.progress}%</span>
-                          </div>
-                          <Progress 
-                            value={file.progress} 
-                            className="h-2"
-                            indicatorClassName="bg-[#9D4EDD]"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-[#9D4EDD]/20 rounded-lg bg-secondary/10">
-                  <Clock className="h-10 w-10 text-[#9D4EDD]/40 mb-3" />
-                  <p className="text-center text-gray-500">No files have been shared yet</p>
-                  <p className="text-center text-xs text-gray-400 mt-1">
-                    Files shared by others will appear here
-                  </p>
-                </div>
-              )}
-            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Simplified Network Status Card */}
+      {/* Shared Files Card */}
       <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div>
-                <CardTitle className="gradient-text text-xl">Network Status</CardTitle>
-                <CardDescription className="flex items-center gap-2">
-                  <div className="flex -space-x-2">
-                    {connectedUsers.map((user) => (
-                      <Avatar key={user.id} className="h-6 w-6 border-2 border-background bg-[#7B2CBF]">
-                        <AvatarFallback className="text-xs">P</AvatarFallback>
-                      </Avatar>
-                    ))}
-                  </div>
-                  <span>{connectedUsers.length} peers connected</span>
-                </CardDescription>
-              </div>
-            </div>
-            <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-              <div className={`h-2 w-2 rounded-full ${isClientReady ? 'bg-green-500' : 'bg-red-500'}`} />
-              {isClientReady ? 'Connected to P2P network' : 'Connecting to P2P network...'}
-            </div>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-medium gradient-text">Available Files</h3>
+            <Badge variant="outline" className="border-[#9D4EDD]/30 text-[#9D4EDD]">
+              {sharedFiles.length} {sharedFiles.length === 1 ? 'file' : 'files'} total
+            </Badge>
           </div>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="rounded-lg border border-[#9D4EDD]/20 bg-card/30">
-            <div className="px-4 py-3 border-b border-[#9D4EDD]/20">
-              <h3 className="text-sm font-medium text-muted-foreground">Connected Peers</h3>
-            </div>
-            <div className="divide-y divide-[#9D4EDD]/20">
-              {connectedUsers.map((user) => (
-                <div key={user.id} className="flex items-center justify-between px-4 py-3 hover:bg-[#9D4EDD]/5 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8 border border-[#9D4EDD]/50 bg-[#7B2CBF]">
-                      <AvatarFallback>P</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-medium">Peer {user.id}</p>
-                      <p className="text-xs text-muted-foreground">Active now</p>
-                    </div>
+
+          <div className="space-y-6 max-h-[500px] overflow-y-auto pr-1">
+            {/* Files Sections */}
+            <div className="grid grid-cols-1 gap-6">
+              {/* Your Shared Files Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Upload className="h-4 w-4 text-[#9D4EDD]" />
+                    <h4 className="text-sm font-medium text-[#9D4EDD]">Your Shared Files</h4>
                   </div>
-                  <div className="h-2 w-2 rounded-full bg-green-500" />
+                  <Badge variant="outline" className="border-[#9D4EDD]/30 text-[#9D4EDD] text-xs">
+                    {sharedFiles.filter(f => f.owner === "You").length} files
+                  </Badge>
                 </div>
-              ))}
+                <div className="space-y-2">
+                  {sharedFiles
+                    .filter(file => file.owner === "You")
+                    .map((file) => (
+                      <div
+                        key={file.id}
+                        className="flex flex-col p-3 rounded-lg border border-[#9D4EDD]/30 bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-[#9D4EDD]/10 p-2 rounded-full">
+                              <FileIcon className="h-5 w-5 text-[#9D4EDD]" />
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{file.name}</span>
+                              <div className="flex items-center gap-2 text-xs text-gray-400">
+                                <span>{file.size}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    if (file.magnetURI) {
+                                      navigator.clipboard.writeText(file.magnetURI);
+                                      const toast = document.getElementById('toast');
+                                      if (toast) {
+                                        toast.classList.remove('hidden');
+                                        setTimeout(() => toast.classList.add('hidden'), 2000);
+                                      }
+                                    }
+                                  }}
+                                  className="hover:bg-[#9D4EDD]/20"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Copy magnet link</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                      </div>
+                    ))}
+                  {sharedFiles.filter(f => f.owner === "You").length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-6 px-4 border border-dashed border-[#9D4EDD]/20 rounded-lg bg-secondary/10">
+                      <p className="text-center text-sm text-gray-500">No files shared yet</p>
+                      <p className="text-center text-xs text-gray-400 mt-1">
+                        Share files to make them available to others
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Downloaded Files Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Download className="h-4 w-4 text-[#9D4EDD]" />
+                    <h4 className="text-sm font-medium text-[#9D4EDD]">Downloaded Files</h4>
+                  </div>
+                  <Badge variant="outline" className="border-[#9D4EDD]/30 text-[#9D4EDD] text-xs">
+                    {sharedFiles.filter(f => f.owner !== "You").length} files
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {/* Download New File Card - Always First */}
+                  <div
+                    className={`flex flex-col p-3 rounded-lg border border-[#9D4EDD]/30 ${
+                      showMagnetInput 
+                        ? "bg-secondary/30" 
+                        : "bg-secondary/10 hover:bg-secondary/30 cursor-pointer"
+                    } transition-all duration-200`}
+                    onClick={() => !showMagnetInput && setShowMagnetInput(true)}
+                  >
+                    {!showMagnetInput ? (
+                      <div className="flex items-center gap-3">
+                        <div className="bg-[#9D4EDD]/10 p-2 rounded-full">
+                          <Download className="h-5 w-5 text-[#9D4EDD]" />
+                        </div>
+                        <div className="flex flex-col flex-1">
+                          <span className="font-medium text-[#9D4EDD]/80">Download New File</span>
+                          <span className="text-xs text-gray-400">Click to add magnet link</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="opacity-50 hover:opacity-100 hover:bg-[#9D4EDD]/20"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-[#9D4EDD]/10 p-2 rounded-full">
+                            <Link className="h-5 w-5 text-[#9D4EDD]" />
+                          </div>
+                          <div className="flex flex-col flex-1">
+                            <span className="font-medium text-[#9D4EDD]/80">Add Magnet Link</span>
+                            <span className="text-xs text-gray-400">Paste a magnet URI to download</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowMagnetInput(false);
+                              setMagnetLink("");
+                            }}
+                            className="opacity-50 hover:opacity-100 hover:bg-[#9D4EDD]/20"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Input
+                            ref={magnetInputRef}
+                            placeholder="magnet:?xt=urn:btih:..."
+                            value={magnetLink}
+                            onChange={(e) => setMagnetLink(e.target.value)}
+                            className="bg-secondary/50 border-[#9D4EDD]/30"
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (magnetLink.trim() && magnetLink.startsWith('magnet:')) {
+                                onFileDownload(magnetLink);
+                                setMagnetLink("");
+                                setShowMagnetInput(false);
+                              }
+                            }}
+                            disabled={!magnetLink.trim() || !magnetLink.startsWith('magnet:')}
+                            className="bg-[#9D4EDD] hover:bg-[#7B2CBF] whitespace-nowrap"
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            Download
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {sharedFiles
+                    .filter(file => file.owner !== "You")
+                    .map((file) => (
+                      <div
+                        key={file.id}
+                        className="flex flex-col p-3 rounded-lg border border-[#9D4EDD]/30 bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-[#9D4EDD]/10 p-2 rounded-full">
+                              <FileIcon className="h-5 w-5 text-[#9D4EDD]" />
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{file.name}</span>
+                              <div className="flex items-center gap-2 text-xs text-gray-400">
+                                <span>{file.size}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    if (file.magnetURI) {
+                                      navigator.clipboard.writeText(file.magnetURI);
+                                      const toast = document.getElementById('toast');
+                                      if (toast) {
+                                        toast.classList.remove('hidden');
+                                        setTimeout(() => toast.classList.add('hidden'), 2000);
+                                      }
+                                    }
+                                  }}
+                                  className="hover:bg-[#9D4EDD]/20"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Copy magnet link</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        
+                        {/* Progress bar for downloading files */}
+                        {file.downloading && typeof file.progress === 'number' && (
+                          <div className="mt-2">
+                            <div className="flex justify-between text-xs mb-1">
+                              <span>Downloading</span>
+                              <span>{file.progress}%</span>
+                            </div>
+                            <Progress 
+                              value={file.progress} 
+                              className="h-2"
+                              indicatorClassName="bg-[#9D4EDD]"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  {sharedFiles.filter(f => f.owner !== "You").length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-6 px-4 border border-dashed border-[#9D4EDD]/20 rounded-lg bg-secondary/10">
+                      <p className="text-center text-sm text-gray-500">No downloaded files yet</p>
+                      <p className="text-center text-xs text-gray-400 mt-1">
+                        Use magnet links to download files from others
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>
