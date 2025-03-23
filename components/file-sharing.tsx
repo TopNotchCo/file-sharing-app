@@ -194,7 +194,7 @@ const ClientFileSharing = () => {
     lastRender: useRef<number>(0)
   }
 
-  const { files, shareFiles, downloadFiles, connectionStatus, peerConnectionIssue } = useWebTorrent()
+  const { files, shareFiles, downloadFiles, connectionStatus, peerConnectionIssue, getClient } = useWebTorrent()
   const { toast: componentToast } = useToast()
 
   // Unified useEffect for initial setup
@@ -407,7 +407,7 @@ const ClientFileSharing = () => {
               {file.status === 'seeding' ? 'Upload' : 'Download'}:{' '}
               {formatBytes(file.status === 'seeding' ? file.uploadSpeed : file.downloadSpeed)}/s
             </span>
-            <span>{file.progress.toFixed(1)}%</span>
+            <span>{(file.progress !== undefined ? file.progress : 0).toFixed(1)}%</span>
           </div>
           
           {/* Show magnet section if hash exists and magnet is available */}
@@ -475,6 +475,41 @@ const ClientFileSharing = () => {
     const daysSinceOptimization = Math.floor((currentDate - optimizationDate) / (1000 * 60 * 60 * 24));
     return daysSinceOptimization <= 7;
   };
+
+  // Implement handleStreamFile correctly
+  const handleStreamFile = useCallback((file: SharedFile) => {
+    if (!getClient) return false;
+    
+    getClient((client) => {
+      if (!client) return;
+      
+      const torrent = client.torrents?.find(t => 
+        file.hash?.startsWith(t.infoHash)
+      );
+      
+      if (torrent?.files) {
+        const mediaFile = torrent.files.find(f => 
+          f.name === file.name && 
+          (f.name.endsWith('.mp4') || f.name.endsWith('.webm') || f.name.endsWith('.mp3'))
+        );
+        
+        if (mediaFile) {
+          // Add a container if it doesn't exist
+          let container = document.getElementById('media-container');
+          if (!container) {
+            container = document.createElement('div');
+            container.id = 'media-container';
+            document.body.appendChild(container);
+          }
+          
+          // Append to the container
+          mediaFile.appendTo('#media-container');
+          return true;
+        }
+      }
+      return false;
+    });
+  }, [getClient]);
 
   return (
     <div className="min-h-screen flex flex-col items-center py-10 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-background to-background/80">
