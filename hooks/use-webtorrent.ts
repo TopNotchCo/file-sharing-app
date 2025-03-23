@@ -33,6 +33,7 @@ export interface TorrentFile {
   timestamp: string;
   progress?: number;
   downloading?: boolean;
+  uploading?: boolean;
   torrent?: WebTorrent.Torrent;
 }
 

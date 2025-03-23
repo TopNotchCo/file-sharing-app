@@ -53,7 +53,7 @@ export default function FileSharing() {
     }
 
     try {
-      const newFile = await createTorrent(file, "Anonymous")
+      const newFile = await createTorrent(file, "You")
       
       // Show and copy magnet link
       setCurrentMagnetLink(newFile.magnetURI)
@@ -83,7 +83,7 @@ export default function FileSharing() {
     }
 
     try {
-      const newFile = await createTextTorrent(text, "Anonymous")
+      const newFile = await createTextTorrent(text, "You")
       
       // Show and copy magnet link
       setCurrentMagnetLink(newFile.magnetURI)

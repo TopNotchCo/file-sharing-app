@@ -154,7 +154,7 @@ export default function MainScreen({
               </div>
               
               <div 
-                className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors min-h-[200px] flex flex-col items-center justify-center ${
+                className={`share-content-section relative border-2 border-dashed rounded-lg p-6 text-center transition-all duration-500 min-h-[200px] flex flex-col items-center justify-center ${
                   isDragging
                     ? "border-[#9D4EDD] bg-[#9D4EDD]/10"
                     : "border-[#9D4EDD]/30 hover:border-[#9D4EDD]/60"
@@ -432,14 +432,53 @@ export default function MainScreen({
                             </Tooltip>
                           </TooltipProvider>
                         </div>
+                        
+                        {/* Progress bar for uploading files if needed */}
+                        {file.uploading && typeof file.progress === 'number' && (
+                          <div className="mt-2">
+                            <div className="flex justify-between text-xs mb-1">
+                              <span>Uploading</span>
+                              <span>{file.progress}%</span>
+                            </div>
+                            <Progress 
+                              value={file.progress} 
+                              className="h-2"
+                              indicatorClassName="bg-[#9D4EDD]"
+                            />
+                          </div>
+                        )}
                       </div>
                     ))}
                   {sharedFiles.filter(f => f.owner === "You").length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-6 px-4 border border-dashed border-[#9D4EDD]/20 rounded-lg bg-secondary/10">
-                      <p className="text-center text-sm text-gray-500">No files shared yet</p>
-                      <p className="text-center text-xs text-gray-400 mt-1">
-                        Share files to make them available to others
-                      </p>
+                    <div
+                      className="flex flex-col p-3 rounded-lg border border-[#9D4EDD]/30 bg-secondary/10 hover:bg-secondary/30 cursor-pointer transition-all duration-200"
+                      onClick={() => {
+                        // Scroll to the share content section smoothly
+                        const shareContentSection = document.querySelector('.share-content-section');
+                        if (shareContentSection) {
+                          shareContentSection.scrollIntoView({ behavior: 'smooth' });
+                          // Add a temporary highlight effect
+                          shareContentSection.classList.add('highlight-pulse');
+                          setTimeout(() => shareContentSection.classList.remove('highlight-pulse'), 2000);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="bg-[#9D4EDD]/10 p-2 rounded-full">
+                          <Upload className="h-5 w-5 text-[#9D4EDD]" />
+                        </div>
+                        <div className="flex flex-col flex-1">
+                          <span className="font-medium text-[#9D4EDD]/80">Share New File</span>
+                          <span className="text-xs text-gray-400">Click to open file sharing options</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="opacity-50 hover:opacity-100 hover:bg-[#9D4EDD]/20"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -537,6 +576,7 @@ export default function MainScreen({
                     )}
                   </div>
 
+                  {/* Only show downloaded files if they exist */}
                   {sharedFiles
                     .filter(file => file.owner !== "You")
                     .map((file) => (
@@ -600,14 +640,6 @@ export default function MainScreen({
                         )}
                       </div>
                     ))}
-                  {sharedFiles.filter(f => f.owner !== "You").length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-6 px-4 border border-dashed border-[#9D4EDD]/20 rounded-lg bg-secondary/10">
-                      <p className="text-center text-sm text-gray-500">No downloaded files yet</p>
-                      <p className="text-center text-xs text-gray-400 mt-1">
-                        Use magnet links to download files from others
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
