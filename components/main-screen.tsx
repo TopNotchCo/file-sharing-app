@@ -14,12 +14,11 @@ import { Progress } from "@/components/ui/progress"
 import { TorrentFile } from "@/hooks/use-webtorrent"
 
 interface MainScreenProps {
-  userName: string
-  onFileShare: (file: File) => void
-  onTextShare: (text: string) => void
-  onFileDownload: (magnetURI: string) => void
+  onFileShare: (file: File) => Promise<void>
+  onTextShare: (text: string) => Promise<void>
+  onFileDownload: (magnetURI: string) => Promise<void>
   connectedUsers: Array<{ id: number; name: string }>
-  sharedFiles: TorrentFile[]
+  sharedFiles: any[]
   currentMagnetLink: string
   onCopyMagnetLink: () => void
   isCopied: boolean
@@ -27,7 +26,6 @@ interface MainScreenProps {
 }
 
 export default function MainScreen({
-  userName,
   onFileShare,
   onTextShare,
   onFileDownload,
@@ -36,7 +34,7 @@ export default function MainScreen({
   currentMagnetLink,
   onCopyMagnetLink,
   isCopied,
-  isClientReady,
+  isClientReady
 }: MainScreenProps) {
   const [clipboardText, setClipboardText] = useState<string>("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -512,27 +510,22 @@ export default function MainScreen({
         </CardContent>
       </Card>
 
+      {/* Simplified Network Status Card */}
       <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="relative">
-                <Avatar className="h-14 w-14 border-2 border-[#9D4EDD]/50 bg-[#7B2CBF]">
-                  <AvatarFallback>{userName.charAt(0)}</AvatarFallback>
-                </Avatar>
-                <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 border-2 border-background" />
-              </div>
               <div>
-                <CardTitle className="gradient-text text-xl">{userName}</CardTitle>
+                <CardTitle className="gradient-text text-xl">Network Status</CardTitle>
                 <CardDescription className="flex items-center gap-2">
                   <div className="flex -space-x-2">
                     {connectedUsers.map((user) => (
                       <Avatar key={user.id} className="h-6 w-6 border-2 border-background bg-[#7B2CBF]">
-                        <AvatarFallback className="text-xs">{user.name.charAt(0)}</AvatarFallback>
+                        <AvatarFallback className="text-xs">P</AvatarFallback>
                       </Avatar>
                     ))}
                   </div>
-                  <span>{connectedUsers.length} users connected</span>
+                  <span>{connectedUsers.length} peers connected</span>
                 </CardDescription>
               </div>
             </div>
@@ -545,17 +538,17 @@ export default function MainScreen({
         <CardContent className="pt-0">
           <div className="rounded-lg border border-[#9D4EDD]/20 bg-card/30">
             <div className="px-4 py-3 border-b border-[#9D4EDD]/20">
-              <h3 className="text-sm font-medium text-muted-foreground">Connected Users</h3>
+              <h3 className="text-sm font-medium text-muted-foreground">Connected Peers</h3>
             </div>
             <div className="divide-y divide-[#9D4EDD]/20">
               {connectedUsers.map((user) => (
                 <div key={user.id} className="flex items-center justify-between px-4 py-3 hover:bg-[#9D4EDD]/5 transition-colors">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-8 w-8 border border-[#9D4EDD]/50 bg-[#7B2CBF]">
-                      <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                      <AvatarFallback>P</AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="font-medium">{user.name}</p>
+                      <p className="font-medium">Peer {user.id}</p>
                       <p className="text-xs text-muted-foreground">Active now</p>
                     </div>
                   </div>
