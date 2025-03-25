@@ -68,7 +68,7 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     
     return {
       id: getFromStorage("lan-user-id", randomId),
-      name: getFromStorage("lan-user-name", `User-${randomId.substring(0, 4)}`),
+      name: getFromStorage("lan-user-name", `You`),
       peerId: nanoid(),
       lastSeen: Date.now(),
       isOnline: true,
@@ -159,6 +159,8 @@ export function useLANDiscovery(): LANDiscoveryReturn {
           .filter((p: RawPeerData) => p.id !== currentUser.id)
           .map((p: RawPeerData) => ({
             ...p,
+            // Make sure the name is always their ID for clarity
+            name: `User ${p.id.substring(0, 4)}`,
             isOnline: (Date.now() - p.lastSeen) < 30000, // Consider online if seen in the last 30 seconds
             isYou: false,
             avatar: p.avatar || "#9D4EDD" // Default color if none provided
