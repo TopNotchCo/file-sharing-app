@@ -6,8 +6,8 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "AirShare - Local Wi-Fi File Sharing",
-  description: "Share files and clipboard text with devices on your local network",
+  title: "AirShare - P2P File Sharing",
+  description: "Share files easily on your local network with AirShare",
   icons: {
     icon: "/favicon.ico",
   }

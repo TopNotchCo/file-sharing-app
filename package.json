@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "lan-server": "tsx scripts/start-lan-server.ts",
+    "dev:lan": "tsx scripts/start-dev.ts"
   },
   "dependencies": {
     "@eslint/eslintrc": "^3",
@@ -47,10 +49,13 @@
     "embla-carousel-react": "8.5.1",
     "eslint": "^9",
     "eslint-config-next": "15.3.0-canary.1",
+    "express": "^4.21.2",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
+    "nanoid": "^5.1.5",
     "next": "15.1.0",
     "next-themes": "^0.4.4",
+    "peerjs": "^1.5.4",
     "process": "0.11.10",
     "react": "^18",
     "react-day-picker": "8.10.1",
@@ -64,16 +69,20 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.6",
     "webtorrent": "1.9.7",
+    "ws": "^8.18.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.1",
     "@types/node": "20.12.7",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
     "@types/simple-peer": "^9.11.8",
     "@types/webtorrent": "^0.109.10",
+    "@types/ws": "^8.18.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.3",
     "typescript": "^5"
   }
 }

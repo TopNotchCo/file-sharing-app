@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { TorrentFile } from "@/hooks/use-webtorrent"
+import { useLANDiscovery } from "@/hooks/use-lan-discovery"
 
 interface MainScreenProps {
   onFileShare: (file: File) => void
@@ -52,6 +53,9 @@ export default function MainScreen({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const magnetInputRef = useRef<HTMLInputElement>(null)
+
+  // Use LAN discovery hook to get users on the network
+  const { localUsers, currentUser, updateUserName, isDiscoveryActive } = useLANDiscovery();
 
   // Set current magnet link when provided (only for upload/sharing)
   useEffect(() => {
@@ -159,17 +163,6 @@ export default function MainScreen({
             <div className="flex-1 space-y-6">
               <div className="flex items-center justify-between pt-4">
                 <h3 className="text-lg font-medium gradient-text">Share Content</h3>
-                <Badge 
-                  variant={isClientReady ? "outline" : "destructive"}
-                  className={isClientReady ? "border-[#9D4EDD]/30 text-[#9D4EDD] flex items-center gap-2" : "hidden"}
-                >
-                  {isClientReady && 
-                    <>
-                      <div className="w-2 h-2 rounded-full bg-[#9D4EDD] animate-pulse" />
-                      <span>Ready to Share</span>
-                    </>
-                  }
-                </Badge>
               </div>
               
               <div 
@@ -908,7 +901,7 @@ export default function MainScreen({
                                     </svg>
                                     <span>
                                       {file.downloadSpeed && file.size ? 
-                                        `${formatETA(file.size * (1 - file.progress / 100) / file.downloadSpeed)}` :
+                                        `${formatETA(file.size * (1 - (file.progress ?? 0) / 100) / file.downloadSpeed)}` :
                                         'Calculating...'}
                                     </span>
                                   </div>
@@ -961,6 +954,9 @@ export default function MainScreen({
       >
         Magnet link copied to clipboard
       </div>
+      
+      {/* LAN Users Panel - only show if discovery is active */}
+      
     </div>
   )
 }
