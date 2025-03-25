@@ -55,6 +55,8 @@ interface LanMessageEvent extends CustomEvent {
 const MAX_PREVIEW_SIZE = 10 * 1024 * 1024; 
 // Size of partial download for preview (1MB)
 const PREVIEW_CHUNK_SIZE = 1 * 1024 * 1024;
+// Maximum text length for clipboard sharing
+const MAX_CLIPBOARD_TEXT_LENGTH = 10000;
 
 // Helper function to ensure progress is limited to 100%
 function normalizeProgress(progress: number | undefined): number {
@@ -76,6 +78,9 @@ export function LANFileSharing() {
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [selectedPeers, setSelectedPeers] = useState<string[]>([]);
   const [isSharing, setIsSharing] = useState(false);
+  const [clipboardText, setClipboardText] = useState<string>("");
+  const [isSharingText, setIsSharingText] = useState(false);
+  const [isTextTabActive, setIsTextTabActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [availableFiles, setAvailableFiles] = useState<SharedFileInfo[]>([]);
   const [fileNotifications, setFileNotifications] = useState<SharedFileInfo[]>([]);
@@ -83,6 +88,7 @@ export function LANFileSharing() {
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewTorrents, setPreviewTorrents] = useState<Record<string, {destroy?: () => void}>>({});
+  const [isDragging, setIsDragging] = useState(false);
 
   // Log key information for debugging
   useEffect(() => {
@@ -160,6 +166,83 @@ export function LANFileSharing() {
         ? prev.filter(id => id !== peerId)
         : [...prev, peerId]
     );
+  };
+
+  const handleClipboardPaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setClipboardText(text.slice(0, MAX_CLIPBOARD_TEXT_LENGTH));
+    } catch (err) {
+      console.error("Failed to read clipboard:", err);
+      toast({
+        title: "Clipboard access denied",
+        description: "Please grant clipboard permission or paste text manually",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const shareClipboardText = async () => {
+    if (!clipboardText.trim() || selectedPeers.length === 0) return;
+    
+    setIsSharingText(true);
+    
+    try {
+      // Create a text file with clipboard content
+      const textBlob = new Blob([clipboardText], { type: 'text/plain' });
+      const textFile = new File([textBlob], `clipboard-${Date.now()}.txt`, { type: 'text/plain' });
+      
+      // Create torrent from this text file
+      const torrent = await createTorrent(textFile, currentUser.name);
+      
+      console.log(`[LANFileSharing] Created text torrent:`, torrent);
+      
+      // Create file info to share with peers
+      const fileInfo: SharedFileInfo = {
+        id: torrent.id,
+        name: "Clipboard Text",
+        size: textBlob.size,
+        magnetURI: torrent.magnetURI,
+        sender: {
+          id: currentUser.id,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        },
+        timestamp: Date.now(),
+        type: 'text',
+        previewContent: clipboardText.slice(0, 1000) // Add preview content directly
+      };
+      
+      // Share with selected peers
+      for (const peerId of selectedPeers) {
+        const messageData = {
+          type: 'FILE_SHARE',
+          data: fileInfo as unknown as Record<string, unknown>,
+          recipient: peerId
+        };
+        
+        console.log("[LANFileSharing] Sending clipboard text message:", messageData);
+        sendMessage(messageData);
+      }
+      
+      toast({
+        title: "Text shared",
+        description: `Successfully shared clipboard text with ${selectedPeers.length} recipient(s)`,
+      });
+      
+      // Reset
+      setClipboardText("");
+      setSelectedPeers([]);
+    } catch (error) {
+      console.error("[LANFileSharing] Error sharing clipboard text:", error);
+      toast({
+        title: "Error sharing text",
+        description: "An error occurred while sharing clipboard text",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSharingText(false);
+    }
   };
 
   const shareFiles = async () => {
@@ -726,22 +809,56 @@ export function LANFileSharing() {
     0
   );
 
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setSelectedFiles(e.dataTransfer.files);
+    }
+  };
+
   return (
-    <div className="space-y-4">
-      <Card className="border border-[#9D4EDD]/20 overflow-hidden">
-        <CardContent className="px-2 py-4">
-          <div className="grid grid-cols-1 gap-4">
-            <div className="bg-card/50 p-3 rounded-lg">
-              <div className="flex flex-wrap gap-2 items-center">
-                <Badge variant="outline" className="bg-accent/50 text-white border-[#9D4EDD]/30">
-                  Connected
-                </Badge>
-                {localUsers.length > 0 && (
-                  <Badge variant="outline" className="bg-[#9D4EDD]/10 text-white border-[#9D4EDD]/30">
-                    {localUsers.length} Online {localUsers.length === 1 ? 'Device' : 'Devices'}
-                  </Badge>
-                )}
-              </div>
+    <div className="space-y-6">
+      {/* Status Card */}
+      <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20 overflow-hidden">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${isDiscoveryActive ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <span className="font-medium text-sm">Local Network</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="bg-[#9D4EDD]/10 text-[#9D4EDD] border-[#9D4EDD]/30">
+                <Users className="h-3 w-3 mr-1" />
+                {localUsers.length} Online
+              </Badge>
+              <Badge variant="outline" className="bg-[#9D4EDD]/10 text-[#9D4EDD] border-[#9D4EDD]/30">
+                <UploadCloud className="h-3 w-3 mr-1" />
+                {(uploadSpeed / 1024).toFixed(1)} KB/s
+              </Badge>
+              <Badge variant="outline" className="bg-[#9D4EDD]/10 text-[#9D4EDD] border-[#9D4EDD]/30">
+                <DownloadCloud className="h-3 w-3 mr-1" />
+                {(downloadSpeed / 1024).toFixed(1)} KB/s
+              </Badge>
             </div>
           </div>
         </CardContent>
@@ -820,7 +937,7 @@ export function LANFileSharing() {
             
             {previewFile?.type === 'text' && (
               <pre className="bg-secondary/20 p-4 rounded-md overflow-auto max-h-[60vh] text-sm">
-                {previewContent || "Loading content..."}
+                {previewContent || previewFile.previewContent || "Loading content..."}
               </pre>
             )}
             
@@ -834,136 +951,225 @@ export function LANFileSharing() {
         </DialogContent>
       </Dialog>
       
-      <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
-        <CardHeader className="px-3">
-          <CardTitle className="gradient-text">Local Network Sharing</CardTitle>
-          <CardDescription>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <Badge variant="outline" className={isDiscoveryActive ? "border-[#9D4EDD]/30 bg-[#9D4EDD]/10 text-[#9D4EDD]" : "bg-red-100/10 border-red-300/30 text-red-500"}>
-                {isDiscoveryActive ? "Connected" : "Disconnected"}
-              </Badge>
-              
-              {!isClientReady && (
-                <Badge variant="outline" className="border-amber-300/30 bg-amber-100/10 text-amber-500">Initializing</Badge>
-              )}
-              
-              <Badge variant="outline" className="border-[#9D4EDD]/30 bg-[#9D4EDD]/10 text-[#9D4EDD]">
-                {localUsers.length} Online Device{localUsers.length !== 1 ? 's' : ''}
-              </Badge>
-            </div>
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-3">
-          <div className="space-y-6">
-            {/* Network members */}
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Users className="h-4 w-4 text-[#9D4EDD]" />
-                <h3 className="text-sm font-medium text-[#9D4EDD]">Available Devices</h3>
-              </div>
-              
-              <div className="flex flex-wrap gap-2 sm:gap-3">
-                {/* Other users */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Users and Sharing Column */}
+        <div className="md:col-span-1 space-y-6">
+          {/* Available Users Card */}
+          <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg font-medium flex items-center gap-2">
+                <Users className="h-5 w-5 text-[#9D4EDD]" />
+                <span className="gradient-text">Available Devices</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
                 {localUsers.length > 0 ? (
                   localUsers.map(user => (
                     <div 
                       key={user.id}
-                      className={`flex flex-col items-center justify-center border rounded-lg p-2 sm:p-3 min-w-[60px] cursor-pointer transition-colors ${
+                      className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all ${
                         selectedPeers.includes(user.peerId) 
-                          ? 'border-[#9D4EDD] bg-[#9D4EDD]/10' 
-                          : 'border-[#9D4EDD]/20 bg-background/50 hover:bg-[#9D4EDD]/5'
+                          ? 'bg-[#9D4EDD]/20 border border-[#9D4EDD]/50' 
+                          : 'bg-secondary/30 border border-[#9D4EDD]/20 hover:bg-[#9D4EDD]/10'
                       }`}
                       onClick={() => togglePeerSelection(user.peerId)}
                     >
-                      <Avatar className="h-12 w-12 mb-2">
+                      <Avatar className="h-8 w-8">
                         <AvatarFallback style={{ backgroundColor: user.avatar || '#9D4EDD' }}>
-                          {user.id.substring(0, 2).toUpperCase()}
+                          {user.name.substring(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-sm font-medium">User {user.id.substring(0, 4)}</span>
-                      <Badge 
-                        variant="outline" 
-                        className={`mt-1 ${
-                          selectedPeers.includes(user.peerId) 
-                            ? 'border-[#9D4EDD] bg-[#9D4EDD]/20 text-[#9D4EDD]' 
-                            : 'border-[#9D4EDD]/30'
-                        }`}
-                      >
-                        {selectedPeers.includes(user.peerId) ? 'Selected' : 'Tap to select'}
-                      </Badge>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium truncate">{user.name}</span>
+                          {selectedPeers.includes(user.peerId) && (
+                            <Check className="h-4 w-4 text-[#9D4EDD]" />
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {user.device || 'Unknown Device'}
+                        </p>
+                      </div>
                     </div>
                   ))
                 ) : (
-                  <div className="flex items-center justify-center w-full p-6 border border-[#9D4EDD]/20 rounded-lg bg-secondary/10">
-                    <p className="text-sm text-muted-foreground">
-                      You&apos;re the only one here. Waiting for others to join...
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* File sharing section */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <UploadCloud className="h-4 w-4 text-[#9D4EDD]" />
-                <h3 className="text-sm font-medium text-[#9D4EDD]">Share Files</h3>
-              </div>
-              
-              <div className="border-2 border-dashed border-[#9D4EDD]/30 hover:border-[#9D4EDD]/60 rounded-lg p-6 space-y-4 bg-secondary/5 transition-colors">
-                <input 
-                  type="file" 
-                  ref={fileInputRef}
-                  onChange={handleFileChange} 
-                  multiple 
-                  className="block w-full text-sm text-slate-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-md file:border-0
-                    file:text-sm file:font-semibold
-                    file:bg-[#9D4EDD]/10 file:text-[#9D4EDD]
-                    hover:file:bg-[#9D4EDD]/20"
-                />
-                
-                {selectedFiles && (
-                  <div className="text-sm">
-                    Selected {selectedFiles.length} file(s):
-                    <ul className="mt-1 list-disc list-inside">
-                      {Array.from(selectedFiles).map((file, index) => (
-                        <li key={index} className="truncate max-w-full">
-                          {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                
-                <Button 
-                  onClick={shareFiles} 
-                  disabled={!selectedFiles || selectedPeers.length === 0 || isSharing || !isClientReady}
-                  className="w-full bg-[#9D4EDD] hover:bg-[#7B2CBF]"
-                >
-                  {isSharing ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Sharing...</span>
+                  <div className="flex items-center justify-center w-full p-8 bg-secondary/10 rounded-lg">
+                    <div className="text-center">
+                      <Users className="h-10 w-10 text-[#9D4EDD]/30 mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground">Waiting for others to join</p>
                     </div>
-                  ) : selectedPeers.length 
-                      ? `Share with ${selectedPeers.length} selected device${selectedPeers.length !== 1 ? 's' : ''}` 
-                      : 'Select devices to share with'
-                  }
-                </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Share Tabs Card */}
+          <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
+            <div className="border-b border-[#9D4EDD]/20">
+              <div className="flex">
+                <button
+                  onClick={() => setIsTextTabActive(false)}
+                  className={`flex-1 px-4 py-3 font-medium text-sm ${!isTextTabActive ? 'text-[#9D4EDD] border-b-2 border-[#9D4EDD]' : 'text-muted-foreground hover:text-[#9D4EDD]/70'}`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <FileIcon className="h-4 w-4" />
+                    Share Files
+                  </div>
+                </button>
+                <button
+                  onClick={() => setIsTextTabActive(true)}
+                  className={`flex-1 px-4 py-3 font-medium text-sm ${isTextTabActive ? 'text-[#9D4EDD] border-b-2 border-[#9D4EDD]' : 'text-muted-foreground hover:text-[#9D4EDD]/70'}`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Share Text
+                  </div>
+                </button>
               </div>
             </div>
-
-            {/* Available files section */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <DownloadCloud className="h-4 w-4 text-[#9D4EDD]" />
-                <h3 className="text-sm font-medium text-[#9D4EDD]">Files Shared with You</h3>
-              </div>
-              
+            <CardContent className="pt-4">
+              {!isTextTabActive ? (
+                <div className="space-y-4">
+                  <div
+                    className={`border-2 border-dashed rounded-lg p-4 text-center transition-all ${
+                      isDragging
+                        ? "border-[#9D4EDD] bg-[#9D4EDD]/10"
+                        : "border-[#9D4EDD]/30 hover:border-[#9D4EDD]/60 bg-secondary/5"
+                    }`}
+                    onDragOver={handleDragOver}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                  >
+                    <div className="flex flex-col items-center justify-center py-4">
+                      <div className="bg-[#9D4EDD]/10 p-3 rounded-full mb-3">
+                        <UploadCloud className="h-6 w-6 text-[#9D4EDD]" />
+                      </div>
+                      <p className="text-sm mb-1">Drag files here or</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
+                      >
+                        Browse Files
+                      </Button>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleFileChange} 
+                        multiple 
+                        className="hidden"
+                      />
+                    </div>
+                  </div>
+                  
+                  {selectedFiles && selectedFiles.length > 0 && (
+                    <div>
+                      <div className="space-y-2 mb-3">
+                        {Array.from(selectedFiles).slice(0, 3).map((file, index) => (
+                          <div key={index} className="flex items-center gap-2 p-2 bg-secondary/20 rounded-md">
+                            <div className="bg-[#9D4EDD]/10 p-1.5 rounded-full">
+                              {getFileIcon(getFileType(file.name))}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{file.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {(file.size / 1024 / 1024).toFixed(2)} MB
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                        {selectedFiles.length > 3 && (
+                          <p className="text-xs text-center text-muted-foreground">
+                            +{selectedFiles.length - 3} more files
+                          </p>
+                        )}
+                      </div>
+                      
+                      <Button 
+                        onClick={shareFiles} 
+                        disabled={selectedPeers.length === 0 || isSharing || !isClientReady}
+                        className="w-full bg-[#9D4EDD] hover:bg-[#7B2CBF]"
+                      >
+                        {isSharing ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Sharing...</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <UploadCloud className="h-4 w-4" />
+                            {selectedPeers.length > 0 
+                              ? `Share with ${selectedPeers.length} ${selectedPeers.length === 1 ? 'device' : 'devices'}` 
+                              : 'Select devices first'}
+                          </div>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-secondary/10 rounded-lg p-4">
+                    <textarea 
+                      value={clipboardText}
+                      onChange={(e) => setClipboardText(e.target.value.slice(0, MAX_CLIPBOARD_TEXT_LENGTH))}
+                      placeholder="Type or paste text to share with others..."
+                      className="w-full h-24 p-2 text-sm rounded-md border border-[#9D4EDD]/30 bg-background focus:border-[#9D4EDD] focus:ring-1 focus:ring-[#9D4EDD] focus:outline-none"
+                    />
+                    <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                      <span>{clipboardText.length}/{MAX_CLIPBOARD_TEXT_LENGTH}</span>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={handleClipboardPaste}
+                        className="h-7 text-xs border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
+                      >
+                        Paste from Clipboard
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <Button 
+                    onClick={shareClipboardText} 
+                    disabled={!clipboardText.trim() || selectedPeers.length === 0 || isSharingText || !isClientReady}
+                    className="w-full bg-[#9D4EDD] hover:bg-[#7B2CBF]"
+                  >
+                    {isSharingText ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Sharing...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        {selectedPeers.length > 0 
+                          ? `Share text with ${selectedPeers.length} ${selectedPeers.length === 1 ? 'device' : 'devices'}` 
+                          : 'Select devices first'}
+                      </div>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Files Shared With You Column */}
+        <div className="md:col-span-2">
+          <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg font-medium flex items-center gap-2">
+                <DownloadCloud className="h-5 w-5 text-[#9D4EDD]" />
+                <span className="gradient-text">Files Shared with You</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               {availableFiles.filter(file => file.sender.id !== currentUser.id).length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {availableFiles
                     .filter(file => file.sender.id !== currentUser.id)
                     .map(file => {
@@ -986,92 +1192,73 @@ export function LANFileSharing() {
                     const canShowPreview = isPreviewable && (isFullyDownloaded || hasPreview) && isSmallEnough;
                     
                     return (
-                      <div key={file.id} className="flex items-center justify-between border border-[#9D4EDD]/20 rounded-lg p-2 text-sm bg-secondary/30 hover:bg-secondary/50 transition-colors">
-                        <div className="flex items-center space-x-2 sm:space-x-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback style={{ backgroundColor: file.sender.avatar || '#9D4EDD' }}>
-                              {file.sender.name.substring(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <div className="flex items-center space-x-2">
-                              <p className="text-sm font-medium truncate max-w-[150px] sm:max-w-full">{file.name}</p>
-                              {downloadInfo?.progress === 100 && <Check className="h-3.5 w-3.5 text-green-500" />}
-                            </div>
-                            <div className="flex items-center gap-1 sm:gap-2">
-                              <p className="text-xs text-muted-foreground whitespace-nowrap">
-                                {getFileIcon(fileType)} {file.sender.name} • {(file.size / 1024 / 1024).toFixed(2)} MB
-                              </p>
-                              
-                              {/* Preview button */}
-                              {canShowPreview ? (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openPreview(file)}
-                                  className="h-6 px-1 sm:px-2 ml-1 text-xs text-[#9D4EDD] hover:bg-[#9D4EDD]/10"
-                                >
-                                  {fileType === 'video' ? 
-                                    <Play className="h-3 w-3 mr-1" /> : 
-                                    <Eye className="h-3 w-3 mr-1" />
-                                  }
-                                  <span className="hidden sm:inline">Preview</span>
-                                </Button>
-                              ) : isPreviewable && isSmallEnough && !file.isGeneratingPreview && !isDownloading ? (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => previewBeforeDownload(file)}
-                                  className="h-6 px-1 sm:px-2 ml-1 text-xs text-[#9D4EDD] hover:bg-[#9D4EDD]/10"
-                                >
-                                  <Eye className="h-3 w-3 mr-1" />
-                                  <span className="hidden sm:inline">Generate Preview</span>
-                                </Button>
-                              ) : file.isGeneratingPreview ? (
-                                <div className="flex items-center h-6 px-1 sm:px-2 ml-1 text-xs text-[#9D4EDD]">
-                                  <Loader className="h-3 w-3 mr-1" />
-                                  <span className="hidden sm:inline">Previewing...</span>
-                                </div>
-                              ) : null}
+                      <div key={file.id} className="bg-secondary/30 border border-[#9D4EDD]/20 rounded-lg p-4 hover:bg-secondary/40 transition-colors">
+                        <div className="flex items-start">
+                          <div className="flex-shrink-0 mr-4">
+                            <Avatar className="h-10 w-10">
+                              <AvatarFallback style={{ backgroundColor: file.sender.avatar || '#9D4EDD' }}>
+                                {file.sender.name.substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-sm font-medium truncate mr-2">{file.name}</h3>
+                              {isFullyDownloaded && <Check className="h-4 w-4 text-green-500" />}
                             </div>
                             
-                            {/* File Preview Thumbnails (only for certain file types) */}
-                            {canShowPreview && (file.previewUrl || file.previewContent) && (
-                              <div className="mt-2 relative" onClick={() => openPreview(file)}>
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-xs text-muted-foreground">
+                                From: {file.sender.name}
+                              </p>
+                              <span className="text-muted-foreground">•</span>
+                              <p className="text-xs text-muted-foreground">
+                                {(file.size / 1024 / 1024).toFixed(2)} MB
+                              </p>
+                              <span className="text-muted-foreground">•</span>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(file.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </p>
+                            </div>
+                            
+                            {/* Preview thumbnails */}
+                            {canShowPreview && (
+                              <div className="mt-3" onClick={() => openPreview(file)}>
                                 {fileType === 'image' && file.previewUrl && (
-                                  <div className="relative group cursor-pointer">
+                                  <div className="relative group cursor-pointer rounded-md overflow-hidden">
                                     <img 
                                       src={file.previewUrl} 
                                       alt={file.name}
-                                      className="h-16 sm:h-20 max-w-[120px] sm:max-w-[200px] object-cover rounded-md border border-[#9D4EDD]/20" 
+                                      className="h-24 w-auto max-w-[300px] object-cover" 
                                     />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center rounded-md">
-                                      <Eye className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
+                                      <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                                     </div>
                                   </div>
                                 )}
                                 
                                 {fileType === 'video' && file.previewUrl && (
-                                  <div className="relative group cursor-pointer">
+                                  <div className="relative group cursor-pointer rounded-md overflow-hidden">
                                     <video 
                                       src={file.previewUrl}
-                                      className="h-16 sm:h-20 max-w-[120px] sm:max-w-[200px] object-cover rounded-md border border-[#9D4EDD]/20"
+                                      className="h-24 w-auto max-w-[300px] object-cover"
                                     />
-                                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center rounded-md">
-                                      <Play className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
+                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                      <Play className="h-8 w-8 text-white" />
                                     </div>
                                   </div>
                                 )}
                                 
                                 {fileType === 'text' && file.previewContent && (
-                                  <div className="mt-2 bg-secondary/20 p-2 rounded-md text-xs cursor-pointer group">
-                                    <div className="max-h-12 sm:max-h-16 overflow-hidden relative">
-                                      <pre className="font-mono text-[10px] leading-tight opacity-70">
+                                  <div className="mt-2 bg-secondary/30 p-3 rounded-md text-xs cursor-pointer group">
+                                    <div className="max-h-16 overflow-hidden relative">
+                                      <pre className="font-mono text-xs leading-tight opacity-80">
                                         {file.previewContent}
                                       </pre>
-                                      <div className="absolute bottom-0 left-0 right-0 h-6 sm:h-8 bg-gradient-to-t from-secondary/80 to-transparent"></div>
+                                      <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-secondary/80 to-transparent"></div>
                                     </div>
-                                    <div className="text-center text-[10px] text-[#9D4EDD] mt-1 opacity-70 group-hover:opacity-100">
+                                    <div className="text-center text-xs text-[#9D4EDD] mt-1 opacity-70 group-hover:opacity-100">
                                       Click to expand
                                     </div>
                                   </div>
@@ -1079,102 +1266,127 @@ export function LANFileSharing() {
                               </div>
                             )}
                             
+                            {/* Download progress */}
                             {isDownloading && downloadInfo && (
-                              <div className="mt-1.5 w-full">
+                              <div className="mt-3">
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className="text-[#9D4EDD]">
+                                    Downloading
+                                  </span>
+                                  <span className="text-[#9D4EDD]">
+                                    {normalizeProgress(downloadInfo.progress)} %
+                                  </span>
+                                </div>
                                 <Progress 
-                                  value={normalizeProgress((downloadInfo.progress || 0) * 100)} 
-                                  className="h-1.5"
+                                  value={normalizeProgress(downloadInfo.progress)} 
+                                  className="h-2"
                                   indicatorClassName="bg-[#9D4EDD]"
                                 />
-                                <div className="flex justify-between text-xs mb-1">
-                                  <span className="text-[10px] sm:text-xs text-[#9D4EDD]">
-                                    {normalizeProgress((downloadInfo.progress || 0) * 100)}%
+                                <div className="flex justify-between text-xs mt-1 text-muted-foreground">
+                                  <span>
+                                    {((downloadInfo.downloadSpeed || 0) / 1024 / 1024).toFixed(2)} MB/s
                                   </span>
-                                  <span className="text-[10px] sm:text-xs text-muted-foreground">
-                                    {((downloadInfo.downloadSpeed || 0) / 1024).toFixed(1)} KB/s
+                                  <span>
+                                    {downloadInfo.downloadedSize && downloadInfo.size 
+                                      ? `${(downloadInfo.downloadedSize / 1024 / 1024).toFixed(1)} of ${(downloadInfo.size / 1024 / 1024).toFixed(1)} MB` 
+                                      : "Calculating..."}
                                   </span>
                                 </div>
                               </div>
                             )}
                           </div>
-                        </div>
-                        
-                        {(!isDownloading || !downloadInfo) && (
-                          <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
-                            {isPreviewable && !hasPreview && !file.isGeneratingPreview && file.size < MAX_PREVIEW_SIZE && (
+                          
+                          <div className="flex-shrink-0 ml-4 flex flex-col gap-2">
+                            {canShowPreview && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openPreview(file)}
+                                className="bg-[#9D4EDD]/5 border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                Preview
+                              </Button>
+                            )}
+                            
+                            {isPreviewable && !hasPreview && !file.isGeneratingPreview && file.size < MAX_PREVIEW_SIZE && !isDownloading && (
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => previewBeforeDownload(file)}
                                 disabled={!isClientReady}
-                                className="bg-transparent border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10 px-2 h-8"
+                                className="border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
                               >
-                                <Eye className="h-4 w-4 sm:mr-2" />
-                                <span className="hidden sm:inline">Preview</span>
+                                <Eye className="h-4 w-4 mr-2" />
+                                Generate Preview
                               </Button>
                             )}
-                            <Button 
-                              size="sm" 
-                              onClick={() => downloadSharedFile(file.magnetURI)}
-                              disabled={!isClientReady || isDownloading}
-                              className="bg-[#9D4EDD] hover:bg-[#7B2CBF] px-2 h-8"
-                            >
-                              <DownloadCloud className="h-4 w-4 sm:mr-2" />
-                              <span className="hidden sm:inline">Download</span>
-                            </Button>
+                            
+                            {file.isGeneratingPreview && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled
+                                className="border-[#9D4EDD]/30"
+                              >
+                                <div className="w-4 h-4 border-2 border-[#9D4EDD] border-t-transparent rounded-full animate-spin mr-2" />
+                                Previewing...
+                              </Button>
+                            )}
+                            
+                            {!isDownloading && (
+                              <Button 
+                                size="sm"
+                                onClick={() => downloadSharedFile(file.magnetURI)}
+                                disabled={!isClientReady}
+                                className="bg-[#9D4EDD] hover:bg-[#7B2CBF]"
+                              >
+                                <DownloadCloud className="h-4 w-4 mr-2" />
+                                Download
+                              </Button>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="flex items-center justify-center w-full p-8 border border-[#9D4EDD]/20 rounded-lg bg-secondary/10">
-                  <div className="text-center">
-                    <FileText className="h-8 w-8 text-[#9D4EDD]/50 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">
-                      No files have been shared yet
-                    </p>
-                  </div>
+                <div className="flex flex-col items-center justify-center h-64 bg-secondary/10 rounded-lg">
+                  <FileText className="h-12 w-12 text-[#9D4EDD]/30 mb-4" />
+                  <p className="text-muted-foreground">No files have been shared with you yet</p>
+                  <p className="text-xs text-muted-foreground mt-2">Files shared by others on your network will appear here</p>
                 </div>
               )}
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="border-t border-[#9D4EDD]/10 pt-4 px-3">
-          <div className="w-full space-y-2">
-            <div className="flex justify-between text-sm">
-              <div className="flex items-center gap-1 text-[#9D4EDD]">
-                <UploadCloud className="h-4 w-4" />
-                <span>{(uploadSpeed / 1024).toFixed(2)} KB/s</span>
-              </div>
-              <div className="flex items-center gap-1 text-[#9D4EDD]">
-                <DownloadCloud className="h-4 w-4" />
-                <span>{(downloadSpeed / 1024).toFixed(2)} KB/s</span>
-              </div>
-            </div>
+            </CardContent>
+            
             {downloadingFiles.length > 0 && (
-              <div className="space-y-3 mt-2">
-                <h4 className="text-sm font-medium text-[#9D4EDD]">Active Transfers:</h4>
-                {downloadingFiles.map(file => (
-                  <div key={file.id} className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="truncate max-w-[70%]">
-                        {file.name || file.id.substring(0, 8)}
-                      </span>
-                      <span className="text-[#9D4EDD]">{normalizeProgress((file.progress || 0) * 100)}%</span>
-                    </div>
-                    <Progress 
-                      value={normalizeProgress((file.progress || 0) * 100)} 
-                      indicatorClassName="bg-[#9D4EDD]"
-                    />
+              <CardFooter className="border-t border-[#9D4EDD]/20 pt-4">
+                <div className="w-full">
+                  <h4 className="text-sm font-medium text-[#9D4EDD] mb-2">Active Downloads</h4>
+                  <div className="space-y-2">
+                    {downloadingFiles.map(file => (
+                      <div key={file.id} className="bg-secondary/20 rounded-md p-2">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="truncate max-w-[70%] font-medium">
+                            {file.name}
+                          </span>
+                          <span className="text-[#9D4EDD]">{normalizeProgress(file.progress)}%</span>
+                        </div>
+                        <Progress 
+                          value={normalizeProgress(file.progress)} 
+                          className="h-1.5"
+                          indicatorClassName="bg-[#9D4EDD]"
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              </CardFooter>
             )}
-          </div>
-        </CardFooter>
-      </Card>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 } 

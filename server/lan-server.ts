@@ -28,6 +28,7 @@ interface LANPeer {
   peerId: string;
   lastSeen: number;
   ip: string; // Store the client's IP
+  subnet: string; // Store the subnet to group peers by WiFi network
   ws: WebSocket;
 }
 
@@ -43,9 +44,16 @@ interface PeerMessage {
   };
 }
 
-// Use a single global room for all LAN peers
-const globalRoom = new Set<LANPeer>();
+// Replace global room with a map of rooms by subnet
+const rooms = new Map<string, Set<LANPeer>>();
 const PEER_TIMEOUT = 30000; // 30 seconds
+
+// Function to extract subnet from IP address (e.g., 192.168.1.x → 192.168.1)
+function extractSubnet(ip: string): string {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return 'unknown';
+  return `${parts[0]}.${parts[1]}.${parts[2]}`;
+}
 
 // Enable CORS for all routes
 app.use((req, res, next) => {
@@ -73,9 +81,12 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     return ws.close();
   }
 
-  console.log(`[WS] Connection #${connectionCounter} from IP: ${ip}`);
+  // Extract subnet from IP to determine which room the peer belongs to
+  const subnet = extractSubnet(ip);
+  console.log(`[WS] Connection #${connectionCounter} from IP: ${ip}, Subnet: ${subnet}`);
   
   let currentPeer: LANPeer | null = null;
+  let currentRoom: Set<LANPeer> | null = null;
 
   const heartbeat = () => {
     if (currentPeer) {
@@ -85,13 +96,30 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
 
   const interval = setInterval(() => {
     const now = Date.now();
-    globalRoom.forEach(peer => {
-      if (now - peer.lastSeen > PEER_TIMEOUT) {
-        console.log(`[WS] Peer ${peer.name} (${peer.id}) from ${peer.ip} timed out, removing`);
-        globalRoom.delete(peer);
+    
+    // Check for timed out peers in all rooms
+    for (const [subnet, room] of rooms.entries()) {
+      const timedOutPeers: LANPeer[] = [];
+      
+      room.forEach(peer => {
+        if (now - peer.lastSeen > PEER_TIMEOUT) {
+          console.log(`[WS] Peer ${peer.name} (${peer.id}) from ${peer.ip} timed out, removing`);
+          timedOutPeers.push(peer);
+        }
+      });
+      
+      // Remove timed out peers
+      timedOutPeers.forEach(peer => room.delete(peer));
+      
+      // If the room is empty, delete it
+      if (room.size === 0) {
+        console.log(`[WS] Room for subnet ${subnet} is empty, removing`);
+        rooms.delete(subnet);
+      } else {
+        // Broadcast updated peer list to this room only
+        broadcastPeersToRoom(subnet, room);
       }
-    });
-    broadcastPeers();
+    }
   }, 5000);
 
   ws.on('message', (data: Buffer) => {
@@ -101,13 +129,21 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
       
       switch (message.type) {
         case 'JOIN':
-          console.log(`[WS] User ${message.userName || 'Unknown'} (${message.userId}) joining from ${ip}`);
+          console.log(`[WS] User ${message.userName || 'Unknown'} (${message.userId}) joining from ${ip} (subnet: ${subnet})`);
           
-          // Check if user already exists (reconnecting)
-          for (const peer of globalRoom) {
+          // Get or create room for this subnet
+          if (!rooms.has(subnet)) {
+            console.log(`[WS] Creating new room for subnet ${subnet}`);
+            rooms.set(subnet, new Set<LANPeer>());
+          }
+          
+          currentRoom = rooms.get(subnet)!;
+          
+          // Check if user already exists in this room (reconnecting)
+          for (const peer of currentRoom) {
             if (peer.id === message.userId) {
-              console.log(`[WS] User ${message.userId} already exists, removing old connection`);
-              globalRoom.delete(peer);
+              console.log(`[WS] User ${message.userId} already exists in room ${subnet}, removing old connection`);
+              currentRoom.delete(peer);
               break;
             }
           }
@@ -118,10 +154,12 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
             peerId: message.peerId || '',
             lastSeen: Date.now(),
             ip,
+            subnet,
             ws
           };
-          globalRoom.add(currentPeer);
-          broadcastPeers();
+          
+          currentRoom.add(currentPeer);
+          broadcastPeersToRoom(subnet, currentRoom);
           break;
         
         case 'HEARTBEAT':
@@ -129,15 +167,20 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
           break;
           
         case 'MESSAGE':
-          console.log(`[WS] Relaying message from ${message.userId}: ${message.message?.type}`);
+          if (!currentRoom) {
+            console.log(`[WS] Cannot relay message: peer not in any room`);
+            break;
+          }
+          
+          console.log(`[WS] Relaying message from ${message.userId} in subnet ${subnet}: ${message.message?.type}`);
           console.log('[WS] Full message payload:', JSON.stringify(message.message, null, 2));
           
           // If the message has a specific recipient
           if (message.message?.recipient) {
             let recipientFound = false;
             
-            // Find the recipient peer
-            for (const peer of globalRoom) {
+            // Find the recipient peer in the same room
+            for (const peer of currentRoom) {
               if (peer.peerId === message.message.recipient) {
                 recipientFound = true;
                 
@@ -157,14 +200,14 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
             }
             
             if (!recipientFound) {
-              console.log(`[WS] Recipient with peerId ${message.message.recipient} not found`);
+              console.log(`[WS] Recipient with peerId ${message.message.recipient} not found in room ${subnet}`);
             }
           } else {
-            // Broadcast the message to all peers except the sender
-            console.log(`[WS] Broadcasting message to all peers except sender`);
+            // Broadcast the message to all peers in the same room except the sender
+            console.log(`[WS] Broadcasting message to all peers in subnet ${subnet} except sender`);
             
             let messagesSent = 0;
-            for (const peer of globalRoom) {
+            for (const peer of currentRoom) {
               if (peer.id !== message.userId && peer.ws.readyState === WebSocket.OPEN) {
                 try {
                   peer.ws.send(JSON.stringify(message));
@@ -176,7 +219,7 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
               }
             }
             
-            console.log(`[WS] Message broadcast to ${messagesSent} peers`);
+            console.log(`[WS] Message broadcast to ${messagesSent} peers in subnet ${subnet}`);
           }
           break;
       }
@@ -188,24 +231,35 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
   ws.on('close', (code, reason) => {
     console.log(`[WS] Connection #${connectionCounter} closed with code ${code}, reason: ${reason || 'No reason'}`);
     clearInterval(interval);
-    if (currentPeer) {
-      console.log(`[WS] Removing peer ${currentPeer.name} (${currentPeer.id})`);
-      globalRoom.delete(currentPeer);
+    
+    if (currentPeer && currentRoom) {
+      console.log(`[WS] Removing peer ${currentPeer.name} (${currentPeer.id}) from room ${subnet}`);
+      currentRoom.delete(currentPeer);
+      
+      // If the room is empty, remove it
+      if (currentRoom.size === 0) {
+        console.log(`[WS] Room for subnet ${subnet} is empty, removing`);
+        rooms.delete(subnet);
+      } else {
+        // Otherwise broadcast updated peer list
+        broadcastPeersToRoom(subnet, currentRoom);
+      }
     }
-    broadcastPeers();
   });
 
   ws.on('error', (error) => {
     console.error(`[WS] Error for connection #${connectionCounter}:`, error);
   });
 
-  const broadcastPeers = () => {
-    const peersList = Array.from(globalRoom).map(({ id, name, peerId, lastSeen, ip }) => ({ 
+  // Function to broadcast peers list to a specific room
+  const broadcastPeersToRoom = (subnet: string, room: Set<LANPeer>) => {
+    const peersList = Array.from(room).map(({ id, name, peerId, lastSeen, ip, subnet }) => ({ 
       id, 
       name, 
       peerId,
       lastSeen,
-      ip // Include IP for debugging
+      ip,
+      subnet
     }));
     
     const message = JSON.stringify({ 
@@ -213,10 +267,10 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
       peers: peersList
     });
     
-    console.log(`[WS] Broadcasting peers update to all clients: ${peersList.length} peers`);
+    console.log(`[WS] Broadcasting peers update to subnet ${subnet}: ${peersList.length} peers`);
     
-    // Send to all peers in the global room
-    globalRoom.forEach(peer => {
+    // Send to all peers in the specified room
+    room.forEach(peer => {
       if (peer.ws.readyState === WebSocket.OPEN) {
         try {
           peer.ws.send(message);
@@ -230,29 +284,44 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
 
 // Heartbeat for WebSocket server
 setInterval(() => {
-  console.log(`[SERVER] Status: ${connectionCounter} total connections, ${globalRoom.size} active peers`);
+  console.log(`[SERVER] Status: ${connectionCounter} total connections, ${rooms.size} active rooms`);
   
-  if (globalRoom.size > 0) {
-    console.log('[SERVER] Active peers:');
-    Array.from(globalRoom).forEach(peer => {
-      console.log(`  - ${peer.name} (${peer.id}) from ${peer.ip}, last seen: ${new Date(peer.lastSeen).toISOString()}`);
-    });
+  let totalPeers = 0;
+  for (const [subnet, room] of rooms.entries()) {
+    totalPeers += room.size;
+    console.log(`[SERVER] Room ${subnet}: ${room.size} peers`);
+    
+    if (room.size > 0) {
+      Array.from(room).forEach(peer => {
+        console.log(`  - ${peer.name} (${peer.id}) from ${peer.ip}, last seen: ${new Date(peer.lastSeen).toISOString()}`);
+      });
+    }
   }
+  
+  console.log(`[SERVER] Total active peers across all rooms: ${totalPeers}`);
 }, 30000);
 
 // Expose endpoints for checking server status and active rooms
 app.get('/status', (_, res) => {
-  res.json({
-    status: 'online',
-    connections: connectionCounter,
-    activePeers: globalRoom.size,
-    peers: Array.from(globalRoom).map(({ id, name, peerId, ip, lastSeen }) => ({
+  const roomsInfo = Array.from(rooms.entries()).map(([subnet, room]) => ({
+    subnet,
+    peerCount: room.size,
+    peers: Array.from(room).map(({ id, name, peerId, ip, lastSeen, subnet }) => ({
       id,
       name,
       peerId,
       ip,
+      subnet,
       lastSeen
     }))
+  }));
+  
+  res.json({
+    status: 'online',
+    connections: connectionCounter,
+    roomCount: rooms.size,
+    totalPeers: roomsInfo.reduce((acc, room) => acc + room.peerCount, 0),
+    rooms: roomsInfo
   });
 });
 
@@ -278,6 +347,8 @@ app.get('/', (_, res) => {
           table { width: 100%; border-collapse: collapse; margin: 20px 0; }
           th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
           th { background-color: #f5f5f5; }
+          .room { margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
+          h3 { margin-top: 0; }
         </style>
       </head>
       <body>
@@ -292,22 +363,29 @@ app.get('/', (_, res) => {
         <p>Open browser console to see connection status.</p>
         <pre id="status">Connecting...</pre>
         
-        <h2>Current Peers</h2>
-        <div id="peers">Loading...</div>
+        <h2>Current Rooms</h2>
+        <div id="rooms">Loading...</div>
         
         <script>
           const statusEl = document.getElementById('status');
-          const peersEl = document.getElementById('peers');
+          const roomsEl = document.getElementById('rooms');
+          let mySubnet = null;
           
           statusEl.textContent = 'Attempting connection...';
           
           function updatePeersList(peers) {
+            if (!mySubnet && peers.length > 0) {
+              mySubnet = peers[0].subnet;
+            }
+            
             if (peers.length === 0) {
-              peersEl.innerHTML = '<p>No peers connected</p>';
+              roomsEl.innerHTML = '<p>No peers connected in your subnet</p>';
               return;
             }
             
-            let html = '<table>';
+            let html = '<div class="room">';
+            html += '<h3>Your Room (Subnet: ' + mySubnet + ')</h3>';
+            html += '<table>';
             html += '<tr><th>Name</th><th>ID</th><th>Peer ID</th><th>IP</th><th>Last Seen</th></tr>';
             
             peers.forEach(peer => {
@@ -321,8 +399,8 @@ app.get('/', (_, res) => {
                 '</tr>';
             });
             
-            html += '</table>';
-            peersEl.innerHTML = html;
+            html += '</table></div>';
+            roomsEl.innerHTML = html;
           }
           
           try {
@@ -355,7 +433,7 @@ app.get('/', (_, res) => {
               console.log('Received message:', JSON.parse(event.data));
               const data = JSON.parse(event.data);
               if (data.type === 'PEERS') {
-                statusEl.textContent = 'Connected! Current peers: ' + data.peers.length;
+                statusEl.textContent = 'Connected! Current peers in your room: ' + data.peers.length;
                 updatePeersList(data.peers);
               }
             };
