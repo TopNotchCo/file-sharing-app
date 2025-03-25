@@ -5,6 +5,10 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useToast } from "@/hooks/use-toast"
 import MainScreen from "./main-screen"
 import { useWebTorrent, type TorrentFile } from "@/hooks/use-webtorrent"
+import { useFilePreview } from "@/hooks/use-file-preview"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { getFileType } from "@/lib/preview"
+import { FileIcon } from "lucide-react"
 
 interface SharingState {
   isSharing: boolean
@@ -33,6 +37,17 @@ export default function FileSharing() {
     setSharedFiles,
     setDownloadingFiles
   } = useWebTorrent()
+
+  // Initialize file preview hook
+  const {
+    previewFile,
+    previewContent,
+    isPreviewOpen,
+    openPreview,
+    closePreview,
+    previewBeforeDownload,
+    updateFullyDownloadedPreview
+  } = useFilePreview();
 
   // All files (shared + downloading)
   const allFiles = [...sharedFiles, ...downloadingFiles]
@@ -79,6 +94,42 @@ export default function FileSharing() {
   useEffect(() => {
     console.log('Magnet Link Changed:', currentMagnetLink ? 'New link available' : 'No link');
   }, [currentMagnetLink]);
+
+  // Track when downloading is complete to generate preview
+  useEffect(() => {
+    downloadingFiles.forEach(file => {
+      if (file.progress === 100 && file.torrent) {
+        const fileType = getFileType(file.name);
+        
+        // Only create previews for supported formats and small enough files
+        if (['image', 'text', 'video', 'audio'].includes(fileType) && file.size < 10 * 1024 * 1024) {
+          const torrentFile = file.torrent.files[0];
+          
+          if (torrentFile) {
+            if (fileType === 'text') {
+              // For text files, get the content
+              torrentFile.getBuffer((err, buffer) => {
+                if (err || !buffer) return;
+                
+                try {
+                  const textContent = new TextDecoder().decode(buffer);
+                  updateFullyDownloadedPreview(file, textContent);
+                } catch (error) {
+                  console.error("Error decoding text file:", error);
+                }
+              });
+            } else {
+              // For other file types, get blob URL
+              torrentFile.getBlobURL((err, url) => {
+                if (err || !url) return;
+                updateFullyDownloadedPreview(file, undefined, url);
+              });
+            }
+          }
+        }
+      }
+    });
+  }, [downloadingFiles, updateFullyDownloadedPreview]);
 
   // Handle file deletion
   const handleFileDelete = useCallback((fileId: string) => {
@@ -366,21 +417,84 @@ export default function FileSharing() {
       })
   }
 
+  // Handler for previewing a file
+  const handlePreviewFile = async (file: TorrentFile) => {
+    if (file.progress === 100) {
+      // File already downloaded, open it directly
+      openPreview(file);
+    } else {
+      // Generate preview for this file
+      await previewBeforeDownload(file);
+      openPreview(file);
+    }
+  }
+
   return (
-    <MainScreen
-      onFileShare={handleFileShare}
-      onTextShare={handleTextShare}
-      onFileDownload={handleFileDownload}
-      onFileDelete={handleFileDelete}
-      onShareCancel={handleShareCancel}
-      sharedFiles={allFiles}
-      currentMagnetLink={currentMagnetLink}
-      onCopyMagnetLink={handleCopyMagnetLink}
-      isCopied={isCopied}
-      isClientReady={isClientReady}
-      isSharing={sharingState.isSharing}
-      sharingProgress={sharingState.progress}
-      sharingStage={sharingState.stage}
-    />
+    <>
+      <MainScreen
+        onFileShare={handleFileShare}
+        onTextShare={handleTextShare}
+        onFileDownload={handleFileDownload}
+        onFileDelete={handleFileDelete}
+        onShareCancel={handleShareCancel}
+        onPreviewFile={handlePreviewFile}
+        sharedFiles={allFiles}
+        currentMagnetLink={currentMagnetLink}
+        onCopyMagnetLink={handleCopyMagnetLink}
+        isCopied={isCopied}
+        isClientReady={isClientReady}
+        isSharing={sharingState.isSharing}
+        sharingProgress={sharingState.progress}
+        sharingStage={sharingState.stage}
+      />
+
+      {/* Preview Dialog */}
+      <Dialog open={isPreviewOpen} onOpenChange={closePreview}>
+        <DialogContent className="sm:max-w-[90vw] max-h-[90vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>{previewFile?.name}</DialogTitle>
+          </DialogHeader>
+          
+          <div className="mt-4">
+            {previewFile?.type === 'image' && previewFile.previewUrl && (
+              <img 
+                src={previewFile.previewUrl} 
+                alt={previewFile.name} 
+                className="max-w-full h-auto rounded-md"
+              />
+            )}
+            
+            {previewFile?.type === 'video' && previewFile.previewUrl && (
+              <video 
+                src={previewFile.previewUrl} 
+                controls 
+                className="max-w-full h-auto rounded-md"
+              />
+            )}
+            
+            {previewFile?.type === 'audio' && previewFile.previewUrl && (
+              <audio 
+                src={previewFile.previewUrl} 
+                controls 
+                className="w-full"
+              />
+            )}
+            
+            {previewFile?.type === 'text' && (
+              <pre className="bg-secondary/20 p-4 rounded-md overflow-auto max-h-[60vh] text-sm">
+                {previewContent || "Loading content..."}
+              </pre>
+            )}
+            
+            {(!previewFile?.type || previewFile.type === 'other') && (
+              <div className="text-center p-6 bg-secondary/20 rounded-md">
+                <FileIcon className="h-16 w-16 text-[#9D4EDD]/50 mx-auto mb-4" />
+                <p>Preview not available for this file type</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
