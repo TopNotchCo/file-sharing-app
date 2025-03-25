@@ -27,14 +27,17 @@ if (typeof window !== 'undefined') {
 export interface TorrentFile {
   id: string;
   name: string;
-  size: string;
+  size: number;
   owner: string;
   magnetURI: string;
-  timestamp: string;
-  progress?: number;
-  downloading?: boolean;
-  uploading?: boolean;
   torrent?: WebTorrent.Torrent;
+  progress?: number;
+  uploading?: boolean;
+  downloading?: boolean;
+  connecting?: boolean;
+  downloadSpeed?: number;
+  downloadedSize?: number;
+  timestamp: string;
 }
 
 export interface WebTorrentHookReturn {
@@ -45,6 +48,8 @@ export interface WebTorrentHookReturn {
   createTextTorrent: (text: string, owner: string) => Promise<TorrentFile>;
   downloadTorrent: (magnetURI: string) => Promise<void>;
   destroyClient: () => void;
+  setSharedFiles: React.Dispatch<React.SetStateAction<TorrentFile[]>>;
+  setDownloadingFiles: React.Dispatch<React.SetStateAction<TorrentFile[]>>;
 }
 
 const WEBTORRENT_TRACKERS = [
@@ -63,12 +68,6 @@ const getRtcConfig = (): RTCConfiguration => {
     ]
   };
 };
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + " B";
-  else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
-  else return (bytes / 1048576).toFixed(1) + " MB";
-}
 
 // Helper function to get error message safely
 function getErrorMessage(error: unknown): string {
@@ -142,7 +141,7 @@ export function useWebTorrent(): WebTorrentHookReturn {
           const newFile: TorrentFile = {
             id: torrent.infoHash,
             name: file.name,
-            size: formatFileSize(file.size),
+            size: file.size,
             owner: owner,
             magnetURI: torrent.magnetURI,
             timestamp: new Date().toISOString(),
@@ -197,7 +196,7 @@ export function useWebTorrent(): WebTorrentHookReturn {
           const newFile: TorrentFile = {
             id: torrent.infoHash,
             name: "Text Snippet",
-            size: formatFileSize(file.size),
+            size: file.size,
             owner: owner,
             magnetURI: torrent.magnetURI,
             timestamp: new Date().toISOString(),
@@ -222,16 +221,17 @@ export function useWebTorrent(): WebTorrentHookReturn {
   );
 
   // Download a torrent from magnetURI
-  const downloadTorrent = useCallback(
-    async (magnetURI: string): Promise<void> => {
-      if (!client) throw new Error("WebTorrent client not initialized");
+  const downloadTorrent = useCallback(async (magnetURI: string): Promise<void> => {
+    if (!client) throw new Error("WebTorrent client not initialized")
 
-      return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
+      try {
+        console.log(`[WebTorrent] Starting download process for magnet: ${magnetURI.slice(0, 50)}...`);
+
         // Don't download if we're already downloading this torrent
-        const existingTorrent = client.torrents.find(
-          t => t.magnetURI === magnetURI
-        );
+        const existingTorrent = client.torrents.find(t => t.magnetURI === magnetURI);
         if (existingTorrent) {
+          console.log('[WebTorrent] Torrent already exists in client');
           toast({
             title: "Already downloading",
             description: "This file is already being downloaded",
@@ -239,55 +239,133 @@ export function useWebTorrent(): WebTorrentHookReturn {
           return resolve();
         }
 
-        client.add(magnetURI, { announce: WEBTORRENT_TRACKERS }, (torrent) => {
-          const newFile: TorrentFile = {
-            id: torrent.infoHash,
-            name: torrent.name || "Unknown",
-            size: formatFileSize(torrent.length),
-            owner: "Remote",
-            magnetURI: torrent.magnetURI,
-            timestamp: new Date().toISOString(),
-            progress: 0,
-            downloading: true,
-            torrent: torrent,
-          };
+        // Create a placeholder file immediately
+        const placeholderFile: TorrentFile = {
+          id: `connecting-${Date.now()}`,
+          name: "Connecting to file...",
+          size: 0,
+          owner: "Remote",
+          magnetURI: magnetURI,
+          connecting: true,
+          downloading: false,
+          progress: 0,
+          timestamp: new Date().toISOString()
+        };
 
-          setDownloadingFiles((prev) => [newFile, ...prev]);
+        console.log('[WebTorrent] Created placeholder file, attempting to connect...');
 
-          torrent.on("download", () => {
-            // Update progress
-            setDownloadingFiles(files => 
-              files.map(file => 
-                file.id === torrent.infoHash 
-                  ? { ...file, progress: Math.round(torrent.progress * 100) } 
-                  : file
-              )
-            );
+        // Add placeholder to downloading files
+        setDownloadingFiles(prev => [placeholderFile, ...prev]);
+
+        const torrent = client.add(magnetURI, { announce: WEBTORRENT_TRACKERS }, (torrent) => {
+          console.log(`[WebTorrent] Connected successfully! Torrent info:`, {
+            name: torrent.name,
+            size: torrent.length,
+            peers: torrent.numPeers,
+            infoHash: torrent.infoHash
           });
 
-          torrent.on("done", () => {
-            toast({
-              title: "Download Complete",
-              description: `${torrent.name} has been downloaded successfully`,
+          // Remove placeholder and add actual file
+          setDownloadingFiles(prev => {
+            const withoutPlaceholder = prev.filter(f => f.id !== placeholderFile.id);
+            const newFile: TorrentFile = {
+              id: torrent.infoHash,
+              name: torrent.name || "Unknown",
+              size: torrent.length,
+              owner: "Remote",
+              magnetURI: torrent.magnetURI,
+              torrent: torrent,
+              downloading: true,
+              connecting: false,
+              progress: 0,
+              downloadSpeed: 0,
+              downloadedSize: 0,
+              timestamp: new Date().toISOString()
+            };
+            return [newFile, ...withoutPlaceholder];
+          });
+
+          // Set up torrent event listeners for detailed tracking
+          torrent.on('warning', (err) => {
+            console.warn(`[WebTorrent] Warning for ${torrent.name}:`, err);
+          });
+
+          torrent.on('wire', (wire, addr) => {
+            console.log(`[WebTorrent] Connected to peer for ${torrent.name}:`, {
+              address: addr,
+              totalPeers: torrent.numPeers
             });
+          });
+
+          // Update download progress
+          const updateProgress = () => {
+            if (torrent) {
+              const progress = Math.round(torrent.progress * 100);
+              const speed = torrent.downloadSpeed;
+              const downloaded = torrent.downloaded;
+              
+              if (progress % 10 === 0) { // Log every 10% progress
+                console.log(`[WebTorrent] Download progress for ${torrent.name}:`, {
+                  progress: `${progress}%`,
+                  speed: `${(speed / (1024 * 1024)).toFixed(2)} MB/s`,
+                  downloaded: `${(downloaded / (1024 * 1024)).toFixed(2)} MB`,
+                  peers: torrent.numPeers
+                });
+              }
+
+              setDownloadingFiles(prev => 
+                prev.map(f => {
+                  if (f.id === torrent.infoHash) {
+                    return {
+                      ...f,
+                      progress,
+                      downloadSpeed: speed,
+                      downloadedSize: downloaded
+                    };
+                  }
+                  return f;
+                })
+              );
+            }
+          };
+
+          // Update progress every 500ms
+          const progressInterval = setInterval(updateProgress, 500);
+
+          // Handle download completion
+          torrent.on('done', () => {
+            console.log(`[WebTorrent] Download completed for ${torrent.name}`, {
+              size: `${(torrent.length / (1024 * 1024)).toFixed(2)} MB`,
+              timeElapsed: `${((Date.now() - Number(placeholderFile.timestamp)) / 1000).toFixed(1)}s`
+            });
+
+            clearInterval(progressInterval);
             
-            // Move from downloading to downloaded
-            setDownloadingFiles(files => 
-              files.filter(file => file.id !== torrent.infoHash)
+            setDownloadingFiles(prev => 
+              prev.map(f => {
+                if (f.id === torrent.infoHash) {
+                  return {
+                    ...f,
+                    downloading: false,
+                    progress: 100
+                  };
+                }
+                return f;
+              })
             );
-            
+
             // Get file
             const torrentFile = torrent.files[0];
             
             // Create download link programmatically
             torrentFile.getBlobURL((err, url) => {
               if (err) {
-                console.error("Error getting blob URL:", err);
+                console.error("[WebTorrent] Error getting blob URL:", err);
                 return;
               }
               
               if (!url) {
-                console.error("No URL returned");
+                console.error("[WebTorrent] No URL returned from getBlobURL");
                 return;
               }
               
@@ -301,23 +379,59 @@ export function useWebTorrent(): WebTorrentHookReturn {
                 URL.revokeObjectURL(url);
               }, 100);
             });
-            
+
             resolve();
           });
 
-          torrent.on("error", (err: string | Error) => {
+          // Handle errors
+          torrent.on('error', (err) => {
+            console.error(`[WebTorrent] Error in torrent ${torrent.name}:`, {
+              error: err,
+              magnetURI: magnetURI.slice(0, 50),
+              infoHash: torrent.infoHash
+            });
+
+            clearInterval(progressInterval);
+            
+            setDownloadingFiles(prev => 
+              prev.filter(f => f.id !== torrent.infoHash)
+            );
+
             toast({
               title: "Download Error",
               description: getErrorMessage(err),
               variant: "destructive",
             });
+            
             reject(err);
           });
         });
-      });
-    },
-    [client, toast]
-  );
+
+        // Handle initial connection errors
+        torrent.on('error', (err) => {
+          console.error('[WebTorrent] Initial connection error:', {
+            error: err,
+            magnetURI: magnetURI.slice(0, 50)
+          });
+
+          // Remove the placeholder file
+          setDownloadingFiles(prev => 
+            prev.filter(f => f.id !== placeholderFile.id)
+          );
+
+          toast({
+            title: "Download Error",
+            description: getErrorMessage(err),
+            variant: "destructive",
+          });
+          reject(err);
+        });
+      } catch (err) {
+        console.error('[WebTorrent] Unexpected error:', err);
+        reject(err);
+      }
+    });
+  }, [client, setDownloadingFiles, toast]);
 
   // Cleanup function
   const destroyClient = useCallback(() => {
@@ -337,5 +451,7 @@ export function useWebTorrent(): WebTorrentHookReturn {
     createTextTorrent,
     downloadTorrent,
     destroyClient,
+    setSharedFiles,
+    setDownloadingFiles,
   };
 } 
