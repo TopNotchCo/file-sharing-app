@@ -21,15 +21,14 @@ Project Structure
 │   ├── file-sharing.tsx
 │   ├── loading.tsx
 │   ├── main-screen.tsx
-│   ├── onboarding-screen.tsx
 │   └── theme-provider.tsx
 ├── hooks/
 │   ├── use-mobile.tsx
 │   ├── use-toast.ts
 │   └── use-webtorrent.ts
 ├── lib/
-│   ├── torrent/
 │   └── utils.ts
+├── node_modules/
 ├── public/
 ├── .cursorrules
 ├── .gitignore
@@ -82,7 +81,7 @@ Specific Guidelines
     Props:
         Pass props explicitly for component-specific state.
     WebTorrent State:
-        Manage WebTorrent client state in a dedicated context or custom hook.
+        Manage WebTorrent client state in a dedicated custom hook (use-webtorrent.ts).
 
 2. Performance Optimization
 
@@ -94,45 +93,47 @@ Specific Guidelines
     WebTorrent Optimization:
         Initialize WebTorrent client only when needed.
         Clean up WebTorrent resources when components unmount.
+        Use proper cleanup functions for torrents to avoid memory leaks.
 
 3. WebTorrent Implementation
 
     Client Initialization:
-        Initialize WebTorrent client in a custom hook or context provider.
+        Initialize WebTorrent client in the use-webtorrent.ts custom hook.
     Torrent Creation:
-        Implement functions to create torrents from files.
+        Implement functions to create torrents from files and text.
     Seeding:
-        Manage seeding state and provide UI feedback.
+        Manage seeding state and provide UI feedback during the process.
     Downloading:
-        Handle torrent downloads with progress tracking.
+        Handle torrent downloads with progress tracking and real-time updates.
     WebRTC:
-        Configure WebRTC for browser-to-browser communication.
+        Configure WebRTC for browser-to-browser communication with proper STUN servers.
     Tracker Configuration:
-        Set up and manage WebTorrent trackers.
+        Set up and manage WebTorrent trackers with reliable WebSocket trackers.
 
 4. File Handling
 
     File Selection:
         Implement drag-and-drop and file picker interfaces.
+        Support clipboard paste detection for text sharing.
     File Processing:
         Handle file chunking and processing efficiently.
     File Storage:
-        Use appropriate storage methods (IndexedDB, localStorage, etc.).
+        Use appropriate storage methods for browser environments.
     File Streaming:
         Implement streaming for media files when possible.
 
 5. UI/UX Guidelines
 
     Responsive Design:
-        Ensure the application works well on all device sizes.
+        Ensure the application works well on all device sizes using Tailwind CSS.
     Loading States:
-        Provide clear loading indicators for torrent operations.
+        Provide clear loading indicators for torrent operations with progress updates.
     Error Handling:
-        Display user-friendly error messages.
+        Display user-friendly error messages using the toast notification system.
     Progress Tracking:
         Show download/upload progress with visual indicators.
     Accessibility:
-        Ensure the application is accessible to all users.
+        Ensure the application is accessible to all users with proper ARIA attributes.
 
 6. Next.js Best Practices
 
@@ -141,24 +142,24 @@ Specific Guidelines
     Server Components:
         Use Server Components where appropriate.
     Client Components:
-        Mark components that need client-side interactivity with "use client".
+        Mark components that need client-side interactivity with "use client" directive.
     API Routes:
-        Implement API routes for server-side operations.
+        Implement API routes for server-side operations if needed.
     Metadata:
-        Configure proper metadata for SEO.
+        Configure proper metadata for SEO in layout.tsx.
 
 7. WebTorrent-Specific Considerations
 
     Browser Compatibility:
-        Handle WebRTC and WebTorrent browser compatibility issues.
+        Handle WebRTC and WebTorrent browser compatibility issues with proper polyfills.
     Network Configuration:
         Provide fallbacks for restrictive network environments.
     Peer Discovery:
-        Implement efficient peer discovery mechanisms.
+        Implement efficient peer discovery mechanisms using multiple trackers.
     Data Verification:
         Ensure data integrity during transfers.
     Connection Management:
-        Handle connection establishment and teardown properly.
+        Handle connection establishment and teardown properly with event listeners.
 
 8. Security Considerations
 
@@ -166,31 +167,24 @@ Specific Guidelines
         Implement hash verification for downloaded content.
     User Privacy:
         Respect user privacy in peer-to-peer connections.
-    Data Encryption:
-        Consider encryption for sensitive data transfers.
     Input Validation:
-        Validate all user inputs and file data.
+        Validate all user inputs and file data before processing.
 
 9. Testing and Debugging
 
-    Unit Testing:
-        Write tests for critical functionality.
-    Integration Testing:
-        Test WebTorrent integration thoroughly.
-    Network Simulation:
-        Test under various network conditions.
     Logging:
-        Implement appropriate logging for debugging.
+        Implement appropriate logging for debugging WebTorrent operations.
+        Use structured logging for tracking complex operations.
 
 10. Code Organization
 
     Component Structure:
         Organize components by feature or function.
     Custom Hooks:
-        Extract reusable logic into custom hooks.
+        Extract reusable logic into custom hooks (use-webtorrent.ts, use-toast.ts, use-mobile.tsx).
     Utility Functions:
-        Create utility functions for common operations.
+        Create utility functions for common operations in utils.ts.
     Type Definitions:
-        Define TypeScript interfaces and types for better code quality.
+        Define TypeScript interfaces and types for better code quality (TorrentFile, SharingState, etc.).
 
 
