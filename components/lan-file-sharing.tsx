@@ -56,6 +56,12 @@ const MAX_PREVIEW_SIZE = 10 * 1024 * 1024;
 // Size of partial download for preview (1MB)
 const PREVIEW_CHUNK_SIZE = 1 * 1024 * 1024;
 
+// Helper function to ensure progress is limited to 100%
+function normalizeProgress(progress: number | undefined): number {
+  if (progress === undefined || progress === null) return 0;
+  return Math.min(Math.round(progress), 100);
+}
+
 export function LANFileSharing() {
   const { localUsers, currentUser, isDiscoveryActive, sendMessage } = useLANDiscovery();
   const { 
@@ -76,7 +82,7 @@ export function LANFileSharing() {
   const [previewFile, setPreviewFile] = useState<SharedFileInfo | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [previewTorrents, setPreviewTorrents] = useState<Record<string, unknown>>({});
+  const [previewTorrents, setPreviewTorrents] = useState<Record<string, {destroy?: () => void}>>({});
 
   // Log key information for debugging
   useEffect(() => {
@@ -612,8 +618,8 @@ export function LANFileSharing() {
       // Destroy all preview torrents
       Object.values(previewTorrents).forEach(torrent => {
         try {
-          if (torrent && typeof (torrent as any).destroy === 'function') {
-            (torrent as any).destroy();
+          if (torrent && typeof torrent.destroy === 'function') {
+            torrent.destroy();
           }
         } catch (e) {
           console.error("[LANFileSharing] Error destroying preview torrent:", e);
@@ -721,7 +727,26 @@ export function LANFileSharing() {
   );
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-4 sm:space-y-6 px-2 sm:px-0">
+    <div className="space-y-4">
+      <Card className="border border-[#9D4EDD]/20 overflow-hidden">
+        <CardContent className="px-2 py-4">
+          <div className="grid grid-cols-1 gap-4">
+            <div className="bg-card/50 p-3 rounded-lg">
+              <div className="flex flex-wrap gap-2 items-center">
+                <Badge variant="outline" className="bg-accent/50 text-white border-[#9D4EDD]/30">
+                  Connected
+                </Badge>
+                {localUsers.length > 0 && (
+                  <Badge variant="outline" className="bg-[#9D4EDD]/10 text-white border-[#9D4EDD]/30">
+                    {localUsers.length} Online {localUsers.length === 1 ? 'Device' : 'Devices'}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      
       {/* File share notifications */}
       {fileNotifications.length > 0 && (
         <div className="fixed top-4 right-4 z-50 space-y-2 max-w-[90%] sm:max-w-md">
@@ -810,7 +835,7 @@ export function LANFileSharing() {
       </Dialog>
       
       <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
-        <CardHeader className="px-3 sm:px-6">
+        <CardHeader className="px-3">
           <CardTitle className="gradient-text">Local Network Sharing</CardTitle>
           <CardDescription>
             <div className="flex flex-wrap gap-2 mt-2">
@@ -828,7 +853,7 @@ export function LANFileSharing() {
             </div>
           </CardDescription>
         </CardHeader>
-        <CardContent className="px-3 sm:px-6">
+        <CardContent className="px-3">
           <div className="space-y-6">
             {/* Network members */}
             <div className="mb-6">
@@ -843,7 +868,7 @@ export function LANFileSharing() {
                   localUsers.map(user => (
                     <div 
                       key={user.id}
-                      className={`flex flex-col items-center justify-center border rounded-lg p-2 sm:p-3 min-w-[70px] sm:min-w-[80px] cursor-pointer transition-colors ${
+                      className={`flex flex-col items-center justify-center border rounded-lg p-2 sm:p-3 min-w-[60px] cursor-pointer transition-colors ${
                         selectedPeers.includes(user.peerId) 
                           ? 'border-[#9D4EDD] bg-[#9D4EDD]/10' 
                           : 'border-[#9D4EDD]/20 bg-background/50 hover:bg-[#9D4EDD]/5'
@@ -961,20 +986,20 @@ export function LANFileSharing() {
                     const canShowPreview = isPreviewable && (isFullyDownloaded || hasPreview) && isSmallEnough;
                     
                     return (
-                      <div key={file.id} className="flex items-center justify-between border border-[#9D4EDD]/20 rounded-lg p-2 sm:p-4 text-sm bg-secondary/30 hover:bg-secondary/50 transition-colors">
-                        <div className="flex items-center space-x-3">
+                      <div key={file.id} className="flex items-center justify-between border border-[#9D4EDD]/20 rounded-lg p-2 text-sm bg-secondary/30 hover:bg-secondary/50 transition-colors">
+                        <div className="flex items-center space-x-2 sm:space-x-3">
                           <Avatar className="h-8 w-8">
                             <AvatarFallback style={{ backgroundColor: file.sender.avatar || '#9D4EDD' }}>
                               {file.sender.name.substring(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <div className="flex items-center space-x-2 sm:space-x-3">
-                              <p className="text-sm font-medium truncate max-w-full">{file.name}</p>
+                            <div className="flex items-center space-x-2">
+                              <p className="text-sm font-medium truncate max-w-[150px] sm:max-w-full">{file.name}</p>
                               {downloadInfo?.progress === 100 && <Check className="h-3.5 w-3.5 text-green-500" />}
                             </div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1 sm:gap-2">
+                              <p className="text-xs text-muted-foreground whitespace-nowrap">
                                 {getFileIcon(fileType)} {file.sender.name} • {(file.size / 1024 / 1024).toFixed(2)} MB
                               </p>
                               
@@ -984,28 +1009,28 @@ export function LANFileSharing() {
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => openPreview(file)}
-                                  className="h-6 px-2 ml-1 text-xs text-[#9D4EDD] hover:bg-[#9D4EDD]/10"
+                                  className="h-6 px-1 sm:px-2 ml-1 text-xs text-[#9D4EDD] hover:bg-[#9D4EDD]/10"
                                 >
                                   {fileType === 'video' ? 
                                     <Play className="h-3 w-3 mr-1" /> : 
                                     <Eye className="h-3 w-3 mr-1" />
                                   }
-                                  Preview
+                                  <span className="hidden sm:inline">Preview</span>
                                 </Button>
                               ) : isPreviewable && isSmallEnough && !file.isGeneratingPreview && !isDownloading ? (
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => previewBeforeDownload(file)}
-                                  className="h-6 px-2 ml-1 text-xs text-[#9D4EDD] hover:bg-[#9D4EDD]/10"
+                                  className="h-6 px-1 sm:px-2 ml-1 text-xs text-[#9D4EDD] hover:bg-[#9D4EDD]/10"
                                 >
                                   <Eye className="h-3 w-3 mr-1" />
-                                  Generate Preview
+                                  <span className="hidden sm:inline">Generate Preview</span>
                                 </Button>
                               ) : file.isGeneratingPreview ? (
-                                <div className="flex items-center h-6 px-2 ml-1 text-xs text-[#9D4EDD]">
-                                  <Loader className="h-3 w-3 mr-1 animate-spin" />
-                                  Previewing...
+                                <div className="flex items-center h-6 px-1 sm:px-2 ml-1 text-xs text-[#9D4EDD]">
+                                  <Loader className="h-3 w-3 mr-1" />
+                                  <span className="hidden sm:inline">Previewing...</span>
                                 </div>
                               ) : null}
                             </div>
@@ -1018,7 +1043,7 @@ export function LANFileSharing() {
                                     <img 
                                       src={file.previewUrl} 
                                       alt={file.name}
-                                      className="h-20 max-w-[200px] object-cover rounded-md border border-[#9D4EDD]/20" 
+                                      className="h-16 sm:h-20 max-w-[120px] sm:max-w-[200px] object-cover rounded-md border border-[#9D4EDD]/20" 
                                     />
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center rounded-md">
                                       <Eye className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1030,21 +1055,21 @@ export function LANFileSharing() {
                                   <div className="relative group cursor-pointer">
                                     <video 
                                       src={file.previewUrl}
-                                      className="h-20 max-w-[200px] object-cover rounded-md border border-[#9D4EDD]/20"
+                                      className="h-16 sm:h-20 max-w-[120px] sm:max-w-[200px] object-cover rounded-md border border-[#9D4EDD]/20"
                                     />
                                     <div className="absolute inset-0 bg-black/30 flex items-center justify-center rounded-md">
-                                      <Play className="h-8 w-8 text-white" />
+                                      <Play className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                                     </div>
                                   </div>
                                 )}
                                 
                                 {fileType === 'text' && file.previewContent && (
                                   <div className="mt-2 bg-secondary/20 p-2 rounded-md text-xs cursor-pointer group">
-                                    <div className="max-h-16 overflow-hidden relative">
+                                    <div className="max-h-12 sm:max-h-16 overflow-hidden relative">
                                       <pre className="font-mono text-[10px] leading-tight opacity-70">
                                         {file.previewContent}
                                       </pre>
-                                      <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-secondary/80 to-transparent"></div>
+                                      <div className="absolute bottom-0 left-0 right-0 h-6 sm:h-8 bg-gradient-to-t from-secondary/80 to-transparent"></div>
                                     </div>
                                     <div className="text-center text-[10px] text-[#9D4EDD] mt-1 opacity-70 group-hover:opacity-100">
                                       Click to expand
@@ -1057,13 +1082,13 @@ export function LANFileSharing() {
                             {isDownloading && downloadInfo && (
                               <div className="mt-1.5 w-full">
                                 <Progress 
-                                  value={(downloadInfo.progress || 0) * 100} 
+                                  value={normalizeProgress((downloadInfo.progress || 0) * 100)} 
                                   className="h-1.5"
                                   indicatorClassName="bg-[#9D4EDD]"
                                 />
                                 <div className="flex justify-between text-xs mb-1">
                                   <span className="text-[10px] sm:text-xs text-[#9D4EDD]">
-                                    {Math.round((downloadInfo.progress || 0) * 100)}%
+                                    {normalizeProgress((downloadInfo.progress || 0) * 100)}%
                                   </span>
                                   <span className="text-[10px] sm:text-xs text-muted-foreground">
                                     {((downloadInfo.downloadSpeed || 0) / 1024).toFixed(1)} KB/s
@@ -1075,27 +1100,27 @@ export function LANFileSharing() {
                         </div>
                         
                         {(!isDownloading || !downloadInfo) && (
-                          <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
                             {isPreviewable && !hasPreview && !file.isGeneratingPreview && file.size < MAX_PREVIEW_SIZE && (
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => previewBeforeDownload(file)}
                                 disabled={!isClientReady}
-                                className="bg-transparent border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10"
+                                className="bg-transparent border-[#9D4EDD]/30 hover:bg-[#9D4EDD]/10 px-2 h-8"
                               >
-                                <Eye className="h-4 w-4 mr-2" />
-                                Preview
+                                <Eye className="h-4 w-4 sm:mr-2" />
+                                <span className="hidden sm:inline">Preview</span>
                               </Button>
                             )}
                             <Button 
                               size="sm" 
                               onClick={() => downloadSharedFile(file.magnetURI)}
                               disabled={!isClientReady || isDownloading}
-                              className="bg-[#9D4EDD] hover:bg-[#7B2CBF]"
+                              className="bg-[#9D4EDD] hover:bg-[#7B2CBF] px-2 h-8"
                             >
-                              <DownloadCloud className="h-4 w-4 mr-2" />
-                              Download
+                              <DownloadCloud className="h-4 w-4 sm:mr-2" />
+                              <span className="hidden sm:inline">Download</span>
                             </Button>
                           </div>
                         )}
@@ -1116,7 +1141,7 @@ export function LANFileSharing() {
             </div>
           </div>
         </CardContent>
-        <CardFooter className="border-t border-[#9D4EDD]/10 pt-4 px-3 sm:px-6">
+        <CardFooter className="border-t border-[#9D4EDD]/10 pt-4 px-3">
           <div className="w-full space-y-2">
             <div className="flex justify-between text-sm">
               <div className="flex items-center gap-1 text-[#9D4EDD]">
@@ -1137,10 +1162,10 @@ export function LANFileSharing() {
                       <span className="truncate max-w-[70%]">
                         {file.name || file.id.substring(0, 8)}
                       </span>
-                      <span className="text-[#9D4EDD]">{Math.round((file.progress || 0) * 100)}%</span>
+                      <span className="text-[#9D4EDD]">{normalizeProgress((file.progress || 0) * 100)}%</span>
                     </div>
                     <Progress 
-                      value={(file.progress || 0) * 100} 
+                      value={normalizeProgress((file.progress || 0) * 100)} 
                       indicatorClassName="bg-[#9D4EDD]"
                     />
                   </div>

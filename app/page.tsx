@@ -4,7 +4,7 @@ import Loading from "@/components/loading"
 
 export default function Home() {
   return (
-    <main className="container py-6">
+    <main className="container max-w-7xl py-6">
       <div className="text-center mb-10 space-y-2">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-[#9D4EDD] to-[#7B2CBF] text-transparent bg-clip-text">
           File Share
@@ -20,4 +20,3 @@ export default function Home() {
     </main>
   )
 }
-

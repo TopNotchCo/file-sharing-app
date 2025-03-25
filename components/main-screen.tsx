@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useCallback, useEffect } from "react"
-import { Upload, Clipboard, Download, X, FileText, File as FileIcon, Copy, Check, Link, Plus, Globe, Wifi } from "lucide-react"
+import { Upload, Clipboard, Download, X, FileText, File as FileIcon, Copy, Check, Link, Plus, Globe, Wifi, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -20,6 +20,7 @@ interface MainScreenProps {
   onFileDownload: (magnetURI: string) => void
   onFileDelete: (fileId: string) => void
   onShareCancel: () => void
+  onPreviewFile?: (file: TorrentFile) => void
   sharedFiles: TorrentFile[]
   currentMagnetLink: string
   onCopyMagnetLink: () => void
@@ -36,6 +37,7 @@ export default function MainScreen({
   onFileDownload,
   onFileDelete,
   onShareCancel,
+  onPreviewFile,
   sharedFiles,
   currentMagnetLink,
   onCopyMagnetLink,
@@ -170,7 +172,7 @@ export default function MainScreen({
   const renderContent = () => {
     if (sharingType === "lan") {
       return (
-        <div className="flex flex-col gap-6 max-w-4xl mx-auto px-4 sm:px-6 w-full">
+        <div className="flex flex-col gap-6 max-w-full mx-auto px-2 w-full">
           {/* Sharing Type Toggle */}
           <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
             <CardContent className="pt-4 pb-4">
@@ -204,7 +206,7 @@ export default function MainScreen({
 
     // Default case: internet sharing
     return (
-      <div className="flex flex-col gap-6 max-w-4xl mx-auto px-2 sm:px-6 w-full">
+      <div className="flex flex-col gap-6 max-w-full mx-auto px-2 w-full">
         {/* Sharing Type Toggle */}
         <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20">
           <CardContent className="pt-4 pb-4">
@@ -341,10 +343,10 @@ export default function MainScreen({
                                 {sharingStage === 'metadata' && "Generating metadata..."}
                                 {sharingStage === 'ready' && "File ready!"}
                               </span>
-                              <span className="text-[#9D4EDD]">{Math.round(sharingProgress)}%</span>
+                              <span className="text-[#9D4EDD]">{normalizeProgress(sharingProgress)}%</span>
                             </div>
                             <Progress 
-                              value={sharingProgress} 
+                              value={normalizeProgress(sharingProgress)} 
                               className="h-2 w-full"
                               indicatorClassName="bg-[#9D4EDD]"
                             />
@@ -635,6 +637,29 @@ export default function MainScreen({
                               </div>
                             </div>
                             <div className="flex items-center gap-1">
+                              {/* Preview button for shared files */}
+                              {onPreviewFile && file.progress === 100 && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={(e: React.MouseEvent) => {
+                                          e.stopPropagation();
+                                          onPreviewFile(file);
+                                        }}
+                                        className="h-8 w-8 hover:bg-[#9D4EDD]/20"
+                                      >
+                                        <Eye className="h-4 w-4 text-[#9D4EDD]" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Preview file</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -690,10 +715,10 @@ export default function MainScreen({
                             <div className="mt-2">
                               <div className="flex justify-between text-xs mb-1">
                                 <span>Uploading</span>
-                                <span>{file.progress}%</span>
+                                <span>{normalizeProgress(file.progress)}%</span>
                               </div>
                               <Progress 
-                                value={file.progress} 
+                                value={normalizeProgress(file.progress)} 
                                 className="h-2"
                                 indicatorClassName="bg-[#9D4EDD]"
                               />
@@ -849,6 +874,29 @@ export default function MainScreen({
                               </div>
                             </div>
                             <div className="flex items-center gap-1">
+                              {/* Preview button for downloaded files */}
+                              {onPreviewFile && file.progress === 100 && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={(e: React.MouseEvent) => {
+                                          e.stopPropagation();
+                                          onPreviewFile(file);
+                                        }}
+                                        className="h-8 w-8 hover:bg-[#9D4EDD]/20"
+                                      >
+                                        <Eye className="h-4 w-4 text-[#9D4EDD]" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Preview file</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -912,14 +960,14 @@ export default function MainScreen({
                                       <div className="w-3 h-3 border-2 border-[#9D4EDD] border-t-transparent rounded-full animate-spin" />
                                     </div>
                                   ) : (
-                                    `${file?.progress?.toString() ?? '0'}%`
+                                    `${normalizeProgress(file?.progress)}%`
                                   )}
                                 </span>
                               </div>
                               {!file.connecting && (
                                 <>
                                   <Progress 
-                                    value={file?.progress ?? 0} 
+                                    value={normalizeProgress(file?.progress)} 
                                     className="h-2"
                                     indicatorClassName="bg-[#9D4EDD]"
                                   />
@@ -1067,5 +1115,11 @@ function formatSize(bytes: number): string {
 function formatDownloadProgress(downloaded?: number, total?: number): string {
   if (!downloaded || !total) return 'Waiting for data...';
   return `${formatSize(downloaded)} of ${formatSize(total)}`;
+}
+
+// Helper function to ensure progress is limited to 100%
+function normalizeProgress(progress: number | undefined): number {
+  if (!progress) return 0;
+  return Math.min(Math.round(progress), 100);
 }
 
