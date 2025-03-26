@@ -92,7 +92,7 @@ export default function FileSharing() {
   }, [sharingState]);
 
   useEffect(() => {
-    console.log('Magnet Link Changed:', currentMagnetLink ? 'New link available' : 'No link');
+    console.log('Magnet Link Changed:', currentMagnetLink ? `New link available: ${currentMagnetLink}` : 'No link');
   }, [currentMagnetLink]);
 
   // Track when downloading is complete to generate preview
