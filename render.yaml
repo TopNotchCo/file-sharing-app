@@ -8,8 +8,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: NEXT_PUBLIC_SERVER_URL
-        fromService:
-          name: airshare
-          type: web
-          property: url 
+      - key: PORT
+        value: 10000
+    headers:
+      - path: /*
+        name: Access-Control-Allow-Origin
+        value: "*"
+      - path: /*
+        name: Access-Control-Allow-Headers
+        value: "Origin, X-Requested-With, Content-Type, Accept" 
