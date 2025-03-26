@@ -55,7 +55,6 @@ export interface WebTorrentHookReturn {
 const WEBTORRENT_TRACKERS = [
   "wss://tracker.openwebtorrent.com",
   "wss://tracker.btorrent.xyz",
-  "wss://tracker.fastcast.nz",
 ]
 
 // Function to get additional RTC config if needed (can be expanded with server-provided configuration)

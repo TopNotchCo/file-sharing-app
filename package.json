@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
     "lan-server": "tsx scripts/start-lan-server.ts",
-    "dev:lan": "tsx scripts/start-dev.ts"
+    "dev:lan": "tsx scripts/start-dev.ts",
+    "clean": "rm -f package-lock.json && rm -rf .next node_modules",
+    "clean:install": "npm run clean && npm install",
+    "lint": "next lint"
   },
   "dependencies": {
     "@eslint/eslintrc": "^3",
