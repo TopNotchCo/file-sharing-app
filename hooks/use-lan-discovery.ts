@@ -115,10 +115,17 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     }
 
     try {
-      // Get the server address without the ws:// prefix
-      const serverUrl = serverAddress?.replace('ws://', 'http://');
+      // Get the server address with the correct HTTP protocol
+      let serverUrl = serverAddress;
       if (!serverUrl) {
         throw new Error("No server address available");
+      }
+      
+      // Convert WebSocket protocol to HTTP protocol correctly
+      if (serverUrl.startsWith('ws://')) {
+        serverUrl = serverUrl.replace('ws://', 'http://');
+      } else if (serverUrl.startsWith('wss://')) {
+        serverUrl = serverUrl.replace('wss://', 'https://');
       }
       
       // Call the create-room endpoint
@@ -205,7 +212,9 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     
     // Get the correct WebSocket URL
     const wsUrl = typeof window !== 'undefined' && 
-      (window.location.hostname.includes('netlify.app') || window.location.hostname.includes('render.com'))
+      (window.location.hostname.includes('netlify.app') || 
+       window.location.hostname.includes('render.com') ||
+       window.location.hostname.includes('vercel.app'))
       ? 'wss://file-sharing-app-23eq.onrender.com'
       : getWebSocketUrl();
 
