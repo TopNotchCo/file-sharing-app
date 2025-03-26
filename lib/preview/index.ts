@@ -1,5 +1,5 @@
 // File preview utilities for AirShare
-import type WebTorrent from "webtorrent";
+import WebTorrent from "webtorrent";
 
 export interface PreviewFile {
   id: string;

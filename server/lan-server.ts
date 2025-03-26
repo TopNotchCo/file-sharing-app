@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { networkInterfaces } from 'os';
 import { getIp, getLocalIpAddress } from '../lib/network-utils';
 import { nanoid } from 'nanoid';
@@ -63,20 +63,20 @@ function extractSubnet(ip: string): string {
 }
 
 // Enable CORS for all routes
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   next();
 });
 
 // Add a debug middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`[HTTP] ${req.method} ${req.url} from ${req.ip}`);
   next();
 });
 
 // API endpoint to create a new explicit room
-app.get('/create-room', (_, res) => {
+app.get('/create-room', (_: Request, res: Response) => {
   const roomId = nanoid(6);
   explicitRooms.set(roomId, new Set<LANPeer>());
   console.log(`[API] Created new explicit room: ${roomId}`);
@@ -290,7 +290,7 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     }
   });
 
-  ws.on('close', (code, reason) => {
+  ws.on('close', (code: number, reason: string) => {
     console.log(`[WS] Connection #${connectionCounter} closed with code ${code}, reason: ${reason || 'No reason'}`);
     clearInterval(interval);
     
@@ -323,7 +323,7 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     }
   });
 
-  ws.on('error', (error) => {
+  ws.on('error', (error: Error) => {
     console.error(`[WS] Error for connection #${connectionCounter}:`, error);
   });
 
@@ -391,7 +391,7 @@ setInterval(() => {
 }, 30000);
 
 // Expose endpoints for checking server status and active rooms
-app.get('/status', (_, res) => {
+app.get('/status', (_: Request, res: Response) => {
   const subnetRoomsInfo = Array.from(rooms.entries()).map(([subnet, room]) => ({
     subnet,
     peerCount: room.size,
@@ -431,7 +431,7 @@ app.get('/status', (_, res) => {
 });
 
 // Endpoint to get server's local IP address
-app.get('/ip', (_, res) => {
+app.get('/ip', (_: Request, res: Response) => {
   const serverIp = getLocalIpAddress();
   res.json({
     ip: serverIp,
@@ -441,7 +441,7 @@ app.get('/ip', (_, res) => {
 });
 
 // Root route for basic testing
-app.get('/', (_, res) => {
+app.get('/', (_: Request, res: Response) => {
   res.send(`
     <html>
       <head>
