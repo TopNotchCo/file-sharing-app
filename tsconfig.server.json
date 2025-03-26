@@ -7,6 +7,6 @@
     "outDir": "dist",
     "allowSyntheticDefaultImports": true
   },
-  "include": ["server/**/*.ts", "scripts/**/*.ts", "lib/**/*.ts"],
+  "include": ["types/**/*.d.ts", "server/**/*.ts", "scripts/**/*.ts", "lib/**/*.ts"],
   "exclude": ["node_modules", ".next", "app", "components", "public"]
 } 
