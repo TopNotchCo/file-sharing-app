@@ -7,25 +7,25 @@ const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
 /**
  * Gets the IP address from request object
  * @param {IncomingMessage | Request} request - HTTP request object
- * @returns {string | undefined} IP address
+ * @returns {string} IP address
  */
-export function getIp(request: IncomingMessage | Request): string | undefined {
+export function getIp(request: IncomingMessage | Request): string {
   let forwarded = request.headers['x-forwarded-for'] || '';
   if (Array.isArray(forwarded)) {
     forwarded = forwarded.join(',');
   }
 
   // For Express Request objects
-  let ip = (request as Request).ip;
+  let ip = (request as Request).ip || '';
   
   // If not available or using standard http IncomingMessage
   if (!ip) {
-    ip = TRUST_PROXY
-      ? (forwarded as string).split(',').shift()
-      : undefined;
+    const forwardedIp = TRUST_PROXY
+      ? (forwarded as string).split(',').shift() || ''
+      : '';
     
     // Fall back to socket remote address
-    ip = ip || request.socket.remoteAddress;
+    ip = forwardedIp || request.socket.remoteAddress || '';
   }
 
   // Convert localhost IPv6 notation to IPv4

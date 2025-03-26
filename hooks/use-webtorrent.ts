@@ -11,7 +11,7 @@ declare global {
     global: typeof globalThis;
     Buffer: typeof Buffer;
     process: typeof process;
-    webTorrentClient?: WebTorrent.Instance;  // Changed from TorrentClient
+    webTorrentClient?: WebTorrent.Instance;
   }
 }
 

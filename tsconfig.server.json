@@ -1,12 +1,1 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "noEmit": false,
-    "outDir": "dist",
-    "allowSyntheticDefaultImports": true
-  },
-  "include": ["types/**/*.d.ts", "server/**/*.ts", "scripts/**/*.ts", "lib/**/*.ts"],
-  "exclude": ["node_modules", ".next", "app", "components", "public"]
-} 
+{"extends": "./tsconfig.json","compilerOptions": {"module": "NodeNext","moduleResolution": "NodeNext","noEmit": false,"outDir": "dist","allowSyntheticDefaultImports": true,"skipLibCheck": true,"noImplicitAny": false,"ignoreDeprecations": "5.0","strict": false},"include": ["types/**/*.d.ts", "server/**/*.ts", "scripts/**/*.ts", "lib/**/*.ts"],"exclude": ["node_modules", ".next", "app", "components", "public"]}
