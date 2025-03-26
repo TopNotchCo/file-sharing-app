@@ -49,6 +49,7 @@
     "cmdk": "1.0.4",
     "date-fns": "^3.0.0",
     "embla-carousel-react": "8.5.1",
+    "ts-node": "^10.9.1",
     "eslint": "^9",
     "eslint-config-next": "15.3.0-canary.1",
     "express": "^4.21.2",

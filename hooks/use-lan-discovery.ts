@@ -40,6 +40,10 @@ export interface LANDiscoveryReturn {
   isDiscoveryActive: boolean;
   serverAddress: string | null;
   sendMessage: (message: LANMessage) => void;
+  createRoom: () => Promise<string>;
+  joinRoom: (roomId: string) => void;
+  currentRoomId: string | null;
+  leaveRoom: () => void;
 }
 
 // Helper to safely access localStorage
@@ -60,6 +64,7 @@ const setToStorage = (key: string, value: string): void => {
 export function useLANDiscovery(): LANDiscoveryReturn {
   const [localUsers, setLocalUsers] = useState<LANUser[]>([]);
   const [serverAddress, setServerAddress] = useState<string | null>(null);
+  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   const [currentUser] = useState<LANUser>(() => {
     // Generate a random avatar color
     const colors = ["#9D4EDD", "#7B2CBF", "#5A189A", "#3C096C", "#FF5E78", "#FF9E7A", "#38B6FF", "#5CE1E6"];
@@ -102,10 +107,101 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     }
   }, [currentUser]);
 
+  // Function to create a new room
+  const createRoom = useCallback(async (): Promise<string> => {
+    // If we're already in a room, leave it first
+    if (currentRoomId) {
+      leaveRoom();
+    }
+
+    try {
+      // Get the server address without the ws:// prefix
+      const serverUrl = serverAddress?.replace('ws://', 'http://');
+      if (!serverUrl) {
+        throw new Error("No server address available");
+      }
+      
+      // Call the create-room endpoint
+      const response = await fetch(`${serverUrl}/create-room`);
+      const data = await response.json();
+      
+      if (!data.roomId) {
+        throw new Error("Failed to create room: No room ID returned");
+      }
+      
+      // Join the newly created room
+      joinRoom(data.roomId);
+      
+      return data.roomId;
+    } catch (error) {
+      console.error("[LANDiscovery] Error creating room:", error);
+      toast({
+        title: "Room Creation Failed",
+        description: "Could not create a new room. Please try again.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  }, [serverAddress, currentRoomId, toast]);
+
+  // Function to join an existing room
+  const joinRoom = useCallback((roomId: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error("[LANDiscovery] WebSocket connection not open, cannot join room");
+      toast({
+        title: "Connection Error",
+        description: "Not connected to server. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Set current room ID
+    setCurrentRoomId(roomId);
+    
+    // Clear existing users
+    setLocalUsers([]);
+    
+    // Send JOIN message with room ID
+    wsRef.current.send(JSON.stringify({
+      type: 'JOIN',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      peerId: currentUser.peerId,
+      avatar: currentUser.avatar,
+      roomId: roomId
+    }));
+    
+    toast({
+      title: "Joined Room",
+      description: `Successfully joined room ${roomId}`,
+    });
+  }, [currentUser, toast]);
+
+  // Function to leave the current room
+  const leaveRoom = useCallback(() => {
+    if (currentRoomId && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Reconnect without room ID to join default subnet room
+      wsRef.current.send(JSON.stringify({
+        type: 'JOIN',
+        userId: currentUser.id,
+        userName: currentUser.name,
+        peerId: currentUser.peerId,
+        avatar: currentUser.avatar
+      }));
+      
+      setCurrentRoomId(null);
+      toast({
+        title: "Left Room",
+        description: "Returned to default LAN room",
+      });
+    }
+  }, [currentRoomId, currentUser, toast]);
+
   // Connect to the WebSocket server only in the browser
   useEffect(() => {
-    // TESTING ONLY: Don't connect in production because we're using a local server
-    if (typeof window === 'undefined' || process.env.NODE_ENV === 'production') return;
+    // Don't restrict connection in production anymore to support render.com
+    if (typeof window === 'undefined') return;
     
     // Get the correct WebSocket URL
     const wsUrl = getWebSocketUrl();
@@ -119,7 +215,7 @@ export function useLANDiscovery(): LANDiscoveryReturn {
       if (wsRef.current?.readyState !== WebSocket.OPEN) {
         toast({
           title: "Connection Failed",
-          description: `Could not connect to LAN server at ${wsUrl}. Check if server is running.`,
+          description: `Could not connect to server at ${wsUrl}. Check if server is running.`,
           variant: "destructive",
         });
       }
@@ -136,7 +232,7 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     wsRef.current.onopen = () => {
       clearTimeout(connectionTimeout);
       toast({
-        title: "Connected to LAN",
+        title: "Connected to Server",
         description: `Successfully connected to ${wsUrl}`,
       });
       
@@ -145,7 +241,9 @@ export function useLANDiscovery(): LANDiscoveryReturn {
         userId: currentUser.id,
         userName: currentUser.name,
         peerId: currentUser.peerId,
-        avatar: currentUser.avatar
+        avatar: currentUser.avatar,
+        // Include roomId if we're joining a specific room
+        roomId: currentRoomId
       }));
       heartbeatIntervalRef.current = setInterval(heartbeat, 10000);
     };
@@ -192,7 +290,7 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     wsRef.current.onerror = () => {
       toast({
         title: "Connection Error",
-        description: `Error connecting to LAN server at ${wsUrl}`,
+        description: `Error connecting to server at ${wsUrl}`,
         variant: "destructive",
       });
     };
@@ -204,7 +302,7 @@ export function useLANDiscovery(): LANDiscoveryReturn {
       }
       wsRef.current?.close();
     };
-  }, [currentUser, toast]);
+  }, [currentUser, toast, currentRoomId]);
 
   const updateUserName = useCallback((name: string) => {
     setToStorage("lan-user-name", name);
@@ -217,6 +315,10 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     updateUserName,
     isDiscoveryActive: !!wsRef.current && wsRef.current.readyState === WebSocket.OPEN,
     serverAddress,
-    sendMessage
+    sendMessage,
+    createRoom,
+    joinRoom,
+    currentRoomId,
+    leaveRoom
   };
 } 

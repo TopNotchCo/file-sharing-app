@@ -64,19 +64,32 @@ export function getLocalIpAddress(): string {
  */
 export function getWebSocketUrl(): string {
   // Use environment variables if available
+  const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL;
+  
+  // If deployed server URL is provided, use that
+  if (serverUrl) {
+    // Determine protocol (wss for https, ws for http)
+    const protocol = serverUrl.startsWith('https://') ? 'wss://' : 'ws://';
+    const domain = serverUrl.replace(/^https?:\/\//, '');
+    return `${protocol}${domain}`;
+  }
+  
+  // For local development
   const hostIp = process.env.NEXT_PUBLIC_HOST_IP;
   const port = process.env.NEXT_PUBLIC_LAN_SERVER_PORT || '3005';
   
+  let baseUrl = '';
+  
   if (hostIp) {
-    return `ws://${hostIp}:${port}`;
-  }
-  
-  // Fallback to using the current hostname from window.location
-  if (typeof window !== 'undefined') {
+    baseUrl = `ws://${hostIp}:${port}`;
+  } else if (typeof window !== 'undefined') {
+    // Fallback to using the current hostname from window.location
     const hostname = window.location.hostname;
-    return `ws://${hostname}:${port}`;
+    baseUrl = `ws://${hostname}:${port}`;
+  } else {
+    // Last resort fallback
+    baseUrl = 'ws://localhost:3005';
   }
   
-  // Last resort fallback
-  return 'ws://localhost:3005';
+  return baseUrl;
 } 
