@@ -1,5 +1,12 @@
 // File preview utilities for AirShare
-import type WebTorrent from "webtorrent";
+import WebTorrent, { Torrent } from "webtorrent";
+
+// Global WebTorrent client type declaration
+declare global {
+  interface Window {
+    webTorrentClient?: typeof WebTorrent.prototype;
+  }
+}
 
 export interface PreviewFile {
   id: string;
@@ -124,7 +131,7 @@ export async function generateFilePreview(
     });
     
     // Create a temporary client instance to download just enough for preview
-    const tempClient = await window.webTorrentClient?.add(file.magnetURI);
+    const tempClient = await (window.webTorrentClient as any)?.add(file.magnetURI);
     
     if (!tempClient) {
       throw new Error("Failed to create preview download");
@@ -337,10 +344,10 @@ export async function generateFilePreview(
 // Create a hook for managing preview torrents
 export function createPreviewTorrentManager() {
   // Store of preview torrents
-  const previewTorrents: Record<string, WebTorrent.Torrent> = {};
+  const previewTorrents: Record<string, Torrent> = {};
   
   // Add a preview torrent
-  const addPreviewTorrent = (fileId: string, torrent: WebTorrent.Torrent) => {
+  const addPreviewTorrent = (fileId: string, torrent: Torrent) => {
     previewTorrents[fileId] = torrent;
   };
   
