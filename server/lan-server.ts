@@ -6,6 +6,8 @@ import { getIp, getLocalIpAddress } from '../lib/network-utils';
 import { nanoid } from 'nanoid';
 
 const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
+// Use HTTP server for development, Render.com handles the HTTPS termination in production
 const server = http.createServer(app);
 const wss = new WebSocketServer({ 
   server,
@@ -570,7 +572,7 @@ app.get('/', (_, res) => {
             statusEl.textContent = 'Attempting connection...';
             
             try {
-              ws = new WebSocket('ws://' + window.location.hostname + ':3005');
+              ws = new WebSocket(\`\${window.location.protocol === 'https:' ? 'wss://' : 'ws://'}\${window.location.hostname}\${window.location.protocol === 'https:' ? '' : ':3005'}\`);
               
               ws.onopen = () => {
                 statusEl.textContent = 'Connected to WebSocket server!';
@@ -643,8 +645,14 @@ console.log(`Attempting to bind server to ${bindAddress}:${port}`);
 server.listen(port, bindAddress, () => {
   console.log(`LAN Server running on port ${port}`);
   console.log(`Local IP: ${serverIp}`);
-  console.log(`For other devices, connect to: ws://${serverIp}:${port}`);
-  console.log(`API available at: http://${serverIp}:${port}/status`);
-  console.log(`Test page available at: http://${serverIp}:${port}`);
+  
+  // Use appropriate protocol for logging based on environment
+  const protocol = isProduction ? 'wss://' : 'ws://';
+  const hostname = isProduction ? 'file-sharing-app-23eq.onrender.com' : serverIp;
+  const portDisplay = isProduction ? '' : `:${port}`;
+  
+  console.log(`For other devices, connect to: ${protocol}${hostname}${portDisplay}`);
+  console.log(`API available at: http${isProduction ? 's' : ''}://${hostname}${portDisplay}/status`);
+  console.log(`Test page available at: http${isProduction ? 's' : ''}://${hostname}${portDisplay}`);
   console.log(`Active network interfaces:`, JSON.stringify(networkInterfaces(), null, 2));
 }); 

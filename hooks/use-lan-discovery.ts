@@ -204,7 +204,8 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     if (typeof window === 'undefined') return;
     
     // Get the correct WebSocket URL
-    const wsUrl = typeof window !== 'undefined' && window.location.hostname.includes('netlify.app')
+    const wsUrl = typeof window !== 'undefined' && 
+      (window.location.hostname.includes('netlify.app') || window.location.hostname.includes('render.com'))
       ? 'wss://file-sharing-app-23eq.onrender.com'
       : getWebSocketUrl();
 
