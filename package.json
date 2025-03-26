@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build && tsc -p tsconfig.server.json",
+    "build:frontend": "next build",
     "start": "node dist/scripts/start-prod.js",
     "lan-server": "tsx scripts/start-lan-server.ts",
     "dev:lan": "tsx scripts/start-dev.ts",

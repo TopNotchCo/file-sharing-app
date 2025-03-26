@@ -1,0 +1,11 @@
+[build]
+  command = "npm run build:frontend"
+  publish = ".next"
+  
+[build.environment]
+  NEXT_PUBLIC_SERVER_URL = "https://file-sharing-app-23eq.onrender.com"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200 

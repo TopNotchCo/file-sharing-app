@@ -204,7 +204,13 @@ export function useLANDiscovery(): LANDiscoveryReturn {
     if (typeof window === 'undefined') return;
     
     // Get the correct WebSocket URL
-    const wsUrl = getWebSocketUrl();
+    const wsUrl = typeof window !== 'undefined' && window.location.hostname.includes('netlify.app')
+      ? 'wss://file-sharing-app-23eq.onrender.com'
+      : getWebSocketUrl();
+
+    // Log the WebSocket URL for debugging
+    console.log(`[LANDiscovery] Connecting to WebSocket server at: ${wsUrl}`);
+    
     setServerAddress(wsUrl);
     
     console.log(`Connecting to LAN server at ${wsUrl}`);
