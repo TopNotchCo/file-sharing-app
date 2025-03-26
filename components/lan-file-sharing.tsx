@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Input } from "./ui/input";
 
 interface SharedFileInfo {
   id: string;
@@ -64,8 +65,24 @@ function normalizeProgress(progress: number | undefined): number {
   return Math.min(Math.round(progress), 100);
 }
 
+// Function to get error message safely
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Unknown error occurred';
+}
+
 export function LANFileSharing() {
-  const { localUsers, currentUser, isDiscoveryActive, sendMessage } = useLANDiscovery();
+  const { 
+    localUsers, 
+    currentUser, 
+    isDiscoveryActive, 
+    sendMessage, 
+    createRoom, 
+    joinRoom, 
+    currentRoomId, 
+    leaveRoom 
+  } = useLANDiscovery();
   const { 
     createTorrent,
     downloadTorrent,
@@ -81,6 +98,9 @@ export function LANFileSharing() {
   const [clipboardText, setClipboardText] = useState<string>("");
   const [isSharingText, setIsSharingText] = useState(false);
   const [isTextTabActive, setIsTextTabActive] = useState(false);
+  const [showRoomInput, setShowRoomInput] = useState(false);
+  const [roomInputValue, setRoomInputValue] = useState("");
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [availableFiles, setAvailableFiles] = useState<SharedFileInfo[]>([]);
   const [fileNotifications, setFileNotifications] = useState<SharedFileInfo[]>([]);
@@ -94,7 +114,8 @@ export function LANFileSharing() {
   useEffect(() => {
     console.log("[LANFileSharing] Current user info:", currentUser);
     console.log("[LANFileSharing] Local users:", localUsers);
-  }, [currentUser, localUsers]);
+    console.log("[LANFileSharing] Current room ID:", currentRoomId);
+  }, [currentUser, localUsers, currentRoomId]);
 
   // Handle received file share messages
   useEffect(() => {
@@ -150,6 +171,61 @@ export function LANFileSharing() {
       return () => clearTimeout(timer);
     }
   }, [fileNotifications]);
+
+  // Handle room creation
+  const handleCreateRoom = async () => {
+    setIsCreatingRoom(true);
+    try {
+      const roomId = await createRoom();
+      toast({
+        title: "Room Created",
+        description: `Created and joined room: ${roomId}`,
+      });
+      // Reset UI state
+      setShowRoomInput(false);
+      setRoomInputValue('');
+    } catch (error) {
+      toast({
+        title: "Room Creation Failed",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingRoom(false);
+    }
+  };
+
+  // Handle room joining
+  const handleJoinRoom = () => {
+    if (!roomInputValue.trim()) {
+      toast({
+        title: "Room ID Required",
+        description: "Please enter a room ID to join",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      joinRoom(roomInputValue.trim());
+      // Reset UI state
+      setShowRoomInput(false);
+      setRoomInputValue('');
+    } catch (error) {
+      toast({
+        title: "Join Room Failed",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle room leaving
+  const handleLeaveRoom = () => {
+    if (currentRoomId) {
+      leaveRoom();
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -836,8 +912,106 @@ export function LANFileSharing() {
     }
   };
 
+  // Render the room controls UI
+  const renderRoomControls = () => {
+    return (
+      <Card className="w-full border border-[#9D4EDD]/20">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-md gradient-text flex items-center gap-2">
+            <Users size={16} />
+            Room Management
+          </CardTitle>
+          <CardDescription>
+            {currentRoomId 
+              ? `Currently in room: ${currentRoomId}` 
+              : "Create or join a room to share files across networks"}
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            {currentRoomId ? (
+              <div className="flex items-center gap-2">
+                <Badge className="bg-[#9D4EDD]">{currentRoomId}</Badge>
+                <Button 
+                  size="sm" 
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentRoomId);
+                    toast({
+                      title: "Room ID Copied",
+                      description: "Room ID copied to clipboard",
+                    });
+                  }}
+                >
+                  Copy ID
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={handleLeaveRoom}
+                >
+                  Leave Room
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {showRoomInput ? (
+                  <div className="space-y-4">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Enter Room ID"
+                        value={roomInputValue}
+                        onChange={(e) => setRoomInputValue(e.target.value)}
+                      />
+                      <Button onClick={handleJoinRoom}>Join</Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowRoomInput(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-sm text-muted-foreground">Or</span>
+                    </div>
+                    <Button 
+                      className="w-full"
+                      onClick={handleCreateRoom}
+                      disabled={isCreatingRoom}
+                    >
+                      {isCreatingRoom ? (
+                        <>
+                          <Loader className="mr-2 h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        'Create New Room'
+                      )}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => setShowRoomInput(true)}
+                      className="w-full"
+                    >
+                      Create/Join Room
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="lan-sharing w-full space-y-6">
+      {/* Room Management Section */}
+      {renderRoomControls()}
+      
       {/* Status Card */}
       <Card className="w-full bg-card/50 backdrop-blur-sm border-[#9D4EDD]/20 overflow-hidden">
         <CardContent className="p-4">
@@ -988,7 +1162,7 @@ export function LANFileSharing() {
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {user.device || 'Unknown Device'}
+                          {"Unknown"}
                         </p>
                       </div>
                     </div>

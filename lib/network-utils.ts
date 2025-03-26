@@ -7,25 +7,25 @@ const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
 /**
  * Gets the IP address from request object
  * @param {IncomingMessage | Request} request - HTTP request object
- * @returns {string | undefined} IP address
+ * @returns {string} IP address
  */
-export function getIp(request: IncomingMessage | Request): string | undefined {
+export function getIp(request: IncomingMessage | Request): string {
   let forwarded = request.headers['x-forwarded-for'] || '';
   if (Array.isArray(forwarded)) {
     forwarded = forwarded.join(',');
   }
 
   // For Express Request objects
-  let ip = (request as Request).ip;
+  let ip = (request as Request).ip || '';
   
   // If not available or using standard http IncomingMessage
   if (!ip) {
-    ip = TRUST_PROXY
-      ? (forwarded as string).split(',').shift()
-      : undefined;
+    const forwardedIp = TRUST_PROXY
+      ? (forwarded as string).split(',').shift() || ''
+      : '';
     
     // Fall back to socket remote address
-    ip = ip || request.socket.remoteAddress;
+    ip = forwardedIp || request.socket.remoteAddress || '';
   }
 
   // Convert localhost IPv6 notation to IPv4
@@ -64,19 +64,44 @@ export function getLocalIpAddress(): string {
  */
 export function getWebSocketUrl(): string {
   // Use environment variables if available
+  const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL;
+  
+  // If deployed server URL is provided, use that
+  if (serverUrl) {
+    // Determine protocol (wss for https, ws for http)
+    const protocol = serverUrl.startsWith('https://') ? 'wss://' : 'ws://';
+    const domain = serverUrl.replace(/^https?:\/\//, '');
+    
+    // Don't append port if it's a secure production environment
+    if (protocol === 'wss://') {
+      return `${protocol}${domain}`;
+    }
+    
+    // For local non-secure environment, include the port
+    const port = process.env.NEXT_PUBLIC_LAN_SERVER_PORT || '3005';
+    return `${protocol}${domain}:${port}`;
+  }
+  
+  // For local development
   const hostIp = process.env.NEXT_PUBLIC_HOST_IP;
   const port = process.env.NEXT_PUBLIC_LAN_SERVER_PORT || '3005';
   
+  // Check if we're in browser context and if the page is secure
+  const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const protocol = isSecure ? 'wss://' : 'ws://';
+  
+  let baseUrl = '';
+  
   if (hostIp) {
-    return `ws://${hostIp}:${port}`;
-  }
-  
-  // Fallback to using the current hostname from window.location
-  if (typeof window !== 'undefined') {
+    baseUrl = `${protocol}${hostIp}:${port}`;
+  } else if (typeof window !== 'undefined') {
+    // Fallback to using the current hostname from window.location
     const hostname = window.location.hostname;
-    return `ws://${hostname}:${port}`;
+    baseUrl = `${protocol}${hostname}:${port}`;
+  } else {
+    // Last resort fallback
+    baseUrl = 'ws://localhost:3005';
   }
   
-  // Last resort fallback
-  return 'ws://localhost:3005';
+  return baseUrl;
 } 
