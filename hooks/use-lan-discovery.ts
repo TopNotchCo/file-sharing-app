@@ -104,7 +104,8 @@ export function useLANDiscovery(): LANDiscoveryReturn {
 
   // Connect to the WebSocket server only in the browser
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    // TESTING ONLY: Don't connect in production because we're using a local server
+    if (typeof window === 'undefined' || process.env.NODE_ENV === 'production') return;
     
     // Get the correct WebSocket URL
     const wsUrl = getWebSocketUrl();
