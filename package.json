@@ -7,8 +7,8 @@
     "build": "next build && tsc -p tsconfig.server.json",
     "build:frontend": "next build",
     "start": "node dist/scripts/start-prod.js",
-    "lan-server": "tsx scripts/start-lan-server.ts",
-    "dev:lan": "tsx scripts/start-dev.ts",
+    "start:server": "cd server && npm run dev",
+    "start:all": "npm run start:server & npm run dev",
     "clean": "rm -f package-lock.json && rm -rf .next node_modules",
     "clean:install": "npm run clean && npm install",
     "lint": "next lint"
